@@ -11,14 +11,12 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 [[package]]
 name = "dns-message"
 version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "304aa3d8181b2652b26543b899edea78673263615f8d15ad4a9cff29b9f036fb"
+source = "git+https://github.com/WatchDG/rust-dns-message.git?branch=feature%2Fnext#93a5e9921fcb322e0f00fce5a8bc297711f6550c"
 
 [[package]]
 name = "dnsio"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d45bce9af2235317c41de47cbd340ed49cb06247b8785703fb7ab2afc2a3c14"
+source = "git+https://github.com/WatchDG/rust-dnsio.git?branch=feature%2Fnext#20795c0535399543d1d0c44a12824aba31be12b9"
 dependencies = [
  "dns-message",
 ]
