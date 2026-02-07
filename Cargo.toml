@@ -1,0 +1,21 @@
+[package]
+name = "stubdns"
+version = "0.1.0"
+edition = "2024"
+description = "DNS stub resolver"
+license = "MIT"
+authors = ["WatchDG <baranov@w3m.co>"]
+repository = "https://github.com/WatchDG/rust-dnsio"
+keywords = ["dns", "resolver", "stub", "protocol", "network"]
+categories = ["network-programming"]
+readme = "README.md"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros"] }
+dnsio = "0.1"
+
+[profile.release]
+opt-level = "z"      # Optimize for size
+lto = true           # Enable Link Time Optimization
+codegen-units = 1    # Better optimization
+strip = true         # Strip symbols
