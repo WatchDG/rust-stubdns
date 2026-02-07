@@ -9,5 +9,6 @@ RUN RUSTFLAGS="-C link-arg=-s" cargo build --release --target x86_64-unknown-lin
 
 FROM scratch
 COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/stubdns /stubdns
+COPY config/stubdns.json /config/stubdns.json
 EXPOSE 8053
-ENTRYPOINT ["/stubdns"]
+ENTRYPOINT ["/stubdns", "--config=/config/stubdns.json"]
