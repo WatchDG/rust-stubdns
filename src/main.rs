@@ -1,3 +1,4 @@
+use dnsio::decode_message;
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, UdpSocket};
 
@@ -33,6 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     if n > 0 {
                         println!("TCP: received {} bytes from {}", n, addr);
                         println!("TCP: data: {:?}", &buffer[..n]);
+                        println!("TCP: message: {:?}", decode_message(&buffer[..n]).unwrap());
                     }
                 }
                 Err(e) => {
@@ -61,6 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 Ok((n, addr)) => {
                     println!("UDP: received {} bytes from {}", n, addr);
                     println!("UDP: data: {:?}", &buffer[..n]);
+                    println!("UDP: message: {:?}", decode_message(&buffer[..n]).unwrap());
                 }
                 Err(e) => {
                     eprintln!("UDP: error receiving data: {}", e);

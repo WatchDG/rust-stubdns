@@ -10,15 +10,15 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
 name = "dns-message"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7407f7c55c1b5e8bb678ff25b8ce6b067071a757067dc4977184159254c3034"
+checksum = "304aa3d8181b2652b26543b899edea78673263615f8d15ad4a9cff29b9f036fb"
 
 [[package]]
 name = "dnsio"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e0e67e23f5f1f45a228a9b0f835cd2d09a470e39da7961fdc6c2211a389e7b4"
+checksum = "5d45bce9af2235317c41de47cbd340ed49cb06247b8785703fb7ab2afc2a3c14"
 dependencies = [
  "dns-message",
 ]
@@ -76,7 +76,7 @@ dependencies = [
 
 [[package]]
 name = "stubdns"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dnsio",
  "tokio",

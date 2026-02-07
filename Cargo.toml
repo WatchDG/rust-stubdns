@@ -1,6 +1,6 @@
 [package]
 name = "stubdns"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "DNS stub resolver"
 license = "MIT"
@@ -12,7 +12,7 @@ readme = "README.md"
 
 [dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros"] }
-dnsio = "0.1"
+dnsio = "0.1.1"
 
 [profile.release]
 opt-level = "z"      # Optimize for size
