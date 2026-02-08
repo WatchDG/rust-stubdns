@@ -4,11 +4,14 @@ mod pool;
 use config::{ListenConfig, Transport, load_config};
 use dnsio::decode_message;
 use futures::future::join_all;
-use pool::{Socket, SocketPool};
+use pool::{Socket, SocketPool, TlsSocket};
+use rustls::ClientConfig;
+use rustls::pki_types::ServerName;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpSocket, TcpStream, UdpSocket};
+use tokio_rustls::TlsConnector;
 
 async fn send_query(
     socket: Socket,
@@ -51,6 +54,37 @@ async fn send_query(
             let mut response_buffer = vec![0u8; response_length];
             stream.read_exact(&mut response_buffer).await?;
             println!("Query: received {} bytes response via TCP", response_length);
+            Ok(response_buffer)
+        }
+        Socket::Tls(tls_socket) => {
+            println!(
+                "Query: sending {} bytes via TLS to {}",
+                query_data.len(),
+                server_addr
+            );
+            let addr: SocketAddr = server_addr.parse()?;
+            let stream = TcpStream::connect(addr).await?;
+            println!("Query: TCP connection established for TLS");
+
+            let auth_name = tls_socket.auth_name.clone();
+            let server_name = ServerName::try_from(auth_name)
+                .map_err(|e| format!("Invalid server name: {}", e))?;
+            let connector = TlsConnector::from(tls_socket.config.clone());
+            let mut tls_stream = connector.connect(server_name, stream).await?;
+            println!("Query: TLS handshake completed");
+
+            let mut length_bytes = (query_data.len() as u16).to_be_bytes().to_vec();
+            length_bytes.extend_from_slice(query_data);
+            tls_stream.write_all(&length_bytes).await?;
+            println!("Query: TLS query sent, waiting for response");
+
+            let mut length_buffer = [0u8; 2];
+            tls_stream.read_exact(&mut length_buffer).await?;
+            let response_length = u16::from_be_bytes(length_buffer) as usize;
+
+            let mut response_buffer = vec![0u8; response_length];
+            tls_stream.read_exact(&mut response_buffer).await?;
+            println!("Query: received {} bytes response via TLS", response_length);
             Ok(response_buffer)
         }
     }
@@ -196,6 +230,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let socket = TcpSocket::new_v4()?;
                     socket.set_keepalive(true)?;
                     socket_pool.add_tcp(socket);
+                    if first_server_addr.is_none() {
+                        first_server_addr = Some(server_addr);
+                    }
+                }
+                Transport::Tls => {
+                    let auth_name = transport_config.get_auth_name();
+                    let mut root_store = rustls::RootCertStore::empty();
+
+                    for cert in rustls_native_certs::load_native_certs()
+                        .map_err(|e| format!("Failed to load native certificates: {}", e))?
+                    {
+                        root_store
+                            .add(cert)
+                            .map_err(|e| format!("Failed to add certificate: {}", e))?;
+                    }
+
+                    let client_config = ClientConfig::builder()
+                        .with_root_certificates(root_store)
+                        .with_no_client_auth();
+                    let tls_socket = TlsSocket {
+                        config: Arc::new(client_config),
+                        auth_name,
+                    };
+                    socket_pool.add_tls(tls_socket);
                     if first_server_addr.is_none() {
                         first_server_addr = Some(server_addr);
                     }

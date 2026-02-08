@@ -20,6 +20,7 @@ pub struct ListenConfig {
 pub enum Transport {
     Udp,
     Tcp,
+    Tls,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +28,8 @@ pub struct TransportConfig {
     pub transport: Transport,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
+    #[serde(rename = "authName", skip_serializing_if = "Option::is_none")]
+    pub auth_name: Option<String>,
 }
 
 impl TransportConfig {
@@ -34,7 +37,14 @@ impl TransportConfig {
         match self.transport {
             Transport::Udp => self.port.unwrap_or(53),
             Transport::Tcp => self.port.unwrap_or(53),
+            Transport::Tls => self.port.unwrap_or(853),
         }
+    }
+
+    pub fn get_auth_name(&self) -> String {
+        self.auth_name
+            .clone()
+            .expect("authName is required for TLS transport")
     }
 }
 
