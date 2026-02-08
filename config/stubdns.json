@@ -7,7 +7,12 @@
     ],
     "upstreamServers": [
         {
-            "host": "8.8.8.8"
+            "host": "8.8.8.8",
+            "transports": [
+                {
+                    "transport": "TCP"
+                }
+            ]
         }
     ]
 }

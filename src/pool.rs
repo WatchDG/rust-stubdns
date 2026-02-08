@@ -1,29 +1,44 @@
 use std::sync::Arc;
-use tokio::net::UdpSocket;
+use tokio::net::{TcpSocket, UdpSocket};
 
-pub struct UdpPool {
-    sockets: Vec<Arc<UdpSocket>>,
-    server_addresses: Vec<String>,
+pub enum Socket {
+    Udp(Arc<UdpSocket>),
+    Tcp(Arc<TcpSocket>),
 }
 
-impl UdpPool {
+pub struct SocketPool {
+    sockets: Vec<Socket>,
+}
+
+impl SocketPool {
     pub fn new() -> Self {
         Self {
             sockets: Vec::new(),
-            server_addresses: Vec::new(),
         }
     }
 
-    pub fn add(&mut self, udp_socket: UdpSocket, server_address: String) {
-        self.sockets.push(Arc::new(udp_socket));
-        self.server_addresses.push(server_address);
+    pub fn add_udp(&mut self, udp_socket: UdpSocket) {
+        self.sockets.push(Socket::Udp(Arc::new(udp_socket)));
     }
 
-    pub fn get_socket(&self, i: usize) -> Arc<UdpSocket> {
-        self.sockets[i].clone()
+    pub fn add_tcp(&mut self, tcp_socket: TcpSocket) {
+        self.sockets.push(Socket::Tcp(Arc::new(tcp_socket)));
     }
 
-    pub fn get_server_address(&self, i: usize) -> &str {
-        &self.server_addresses[i]
+    pub fn get_socket(&self, i: usize) -> Option<Socket> {
+        if i < self.sockets.len() {
+            Some(self.sockets[i].clone())
+        } else {
+            None
+        }
+    }
+}
+
+impl Clone for Socket {
+    fn clone(&self) -> Self {
+        match self {
+            Socket::Udp(socket) => Socket::Udp(socket.clone()),
+            Socket::Tcp(socket) => Socket::Tcp(socket.clone()),
+        }
     }
 }

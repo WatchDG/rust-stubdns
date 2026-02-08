@@ -6,7 +6,7 @@ use std::io;
 pub struct Config {
     pub listen: Vec<ListenConfig>,
     #[serde(rename = "upstreamServers")]
-    pub upstream_servers: Vec<ServerConfig>,
+    pub upstream_servers: Vec<UpstreamServerConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,8 +16,32 @@ pub struct ListenConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServerConfig {
+#[serde(rename_all = "UPPERCASE")]
+pub enum Transport {
+    Udp,
+    Tcp,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransportConfig {
+    pub transport: Transport,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+}
+
+impl TransportConfig {
+    pub fn get_port(&self) -> u16 {
+        match self.transport {
+            Transport::Udp => self.port.unwrap_or(53),
+            Transport::Tcp => self.port.unwrap_or(53),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpstreamServerConfig {
     pub host: String,
+    pub transports: Vec<TransportConfig>,
 }
 
 pub fn load_config() -> Result<Config, Box<dyn std::error::Error + Send + Sync>> {

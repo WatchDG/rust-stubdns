@@ -1,13 +1,60 @@
 mod config;
 mod pool;
 
-use config::{ListenConfig, load_config};
+use config::{ListenConfig, Transport, load_config};
 use dnsio::decode_message;
 use futures::future::join_all;
-use pool::UdpPool;
+use pool::{Socket, SocketPool};
+use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::AsyncReadExt;
-use tokio::net::{TcpListener, UdpSocket};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpSocket, TcpStream, UdpSocket};
+
+async fn send_query(
+    socket: Socket,
+    query_data: &[u8],
+    server_addr: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    match socket {
+        Socket::Udp(udp_socket) => {
+            println!(
+                "Query: sending {} bytes via UDP to {}",
+                query_data.len(),
+                server_addr
+            );
+            udp_socket.send_to(query_data, server_addr).await?;
+            println!("Query: UDP query sent, waiting for response");
+            let mut response_buffer = vec![0u8; 4096];
+            let (response_len, _) = udp_socket.recv_from(&mut response_buffer).await?;
+            println!("Query: received {} bytes response via UDP", response_len);
+            Ok(response_buffer[..response_len].to_vec())
+        }
+        Socket::Tcp(_tcp_socket) => {
+            println!(
+                "Query: sending {} bytes via TCP to {}",
+                query_data.len(),
+                server_addr
+            );
+            let addr: SocketAddr = server_addr.parse()?;
+            let mut stream = TcpStream::connect(addr).await?;
+            println!("Query: TCP connection established");
+
+            let mut length_bytes = (query_data.len() as u16).to_be_bytes().to_vec();
+            length_bytes.extend_from_slice(query_data);
+            stream.write_all(&length_bytes).await?;
+            println!("Query: TCP query sent, waiting for response");
+
+            let mut length_buffer = [0u8; 2];
+            stream.read_exact(&mut length_buffer).await?;
+            let response_length = u16::from_be_bytes(length_buffer) as usize;
+
+            let mut response_buffer = vec![0u8; response_length];
+            stream.read_exact(&mut response_buffer).await?;
+            println!("Query: received {} bytes response via TCP", response_length);
+            Ok(response_buffer)
+        }
+    }
+}
 
 async fn start_tcp_server(listen_config: ListenConfig) {
     let addr = format!("{}:{}", listen_config.host, listen_config.port);
@@ -52,7 +99,11 @@ async fn start_tcp_server(listen_config: ListenConfig) {
     }
 }
 
-async fn start_udp_server(listen_config: ListenConfig, udp_pool: Arc<UdpPool>) {
+async fn start_udp_server(
+    listen_config: ListenConfig,
+    socket_pool: Arc<SocketPool>,
+    server_addr: String,
+) {
     let addr = format!("{}:{}", listen_config.host, listen_config.port);
     let socket = match UdpSocket::bind(&addr).await {
         Ok(s) => s,
@@ -76,58 +127,39 @@ async fn start_udp_server(listen_config: ListenConfig, udp_pool: Arc<UdpPool>) {
                 }
 
                 let query_data = &buffer[..n];
-                let client_socket = udp_pool.get_socket(0);
-                let server_addr = udp_pool.get_server_address(0);
+                let client_socket = socket_pool.get_socket(0).unwrap();
 
                 println!("UDP: forwarding query to DNS server {}", server_addr);
 
-                match client_socket.send_to(query_data, &server_addr).await {
-                    Ok(_) => {
-                        println!("UDP: query sent to {}", server_addr);
+                match send_query(client_socket, query_data, &server_addr).await {
+                    Ok(response_data) => {
+                        println!(
+                            "UDP: received {} bytes response from {}",
+                            response_data.len(),
+                            server_addr
+                        );
+                        println!("UDP: response data: {:?}", &response_data);
 
-                        let mut response_buffer = vec![0u8; 4096];
-                        match client_socket.recv_from(&mut response_buffer).await {
-                            Ok((response_len, _)) => {
-                                println!(
-                                    "UDP: received {} bytes response from {}",
-                                    response_len, server_addr
-                                );
-                                println!(
-                                    "UDP: response data: {:?}",
-                                    &response_buffer[..response_len]
-                                );
-
-                                match decode_message(&response_buffer[..response_len]) {
-                                    Ok(response_msg) => {
-                                        println!("UDP: response message: {:?}", response_msg);
-                                    }
-                                    Err(e) => {
-                                        eprintln!("UDP: error decoding response: {}", e)
-                                    }
-                                }
-
-                                match socket
-                                    .send_to(&response_buffer[..response_len], client_addr)
-                                    .await
-                                {
-                                    Ok(_) => {
-                                        println!("UDP: response sent to client {}", client_addr)
-                                    }
-                                    Err(e) => {
-                                        eprintln!("UDP: error sending response to client: {}", e)
-                                    }
-                                }
+                        match decode_message(&response_data) {
+                            Ok(response_msg) => {
+                                println!("UDP: response message: {:?}", response_msg);
                             }
                             Err(e) => {
-                                eprintln!(
-                                    "UDP: error receiving response from {}: {}",
-                                    server_addr, e
-                                );
+                                eprintln!("UDP: error decoding response: {}", e)
+                            }
+                        }
+
+                        match socket.send_to(&response_data, client_addr).await {
+                            Ok(_) => {
+                                println!("UDP: response sent to client {}", client_addr)
+                            }
+                            Err(e) => {
+                                eprintln!("UDP: error sending response to client: {}", e)
                             }
                         }
                     }
                     Err(e) => {
-                        eprintln!("UDP: error sending query to {}: {}", server_addr, e);
+                        eprintln!("UDP: error sending/receiving query: {}", e);
                     }
                 }
             }
@@ -144,29 +176,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     println!("Config: {:#?}", config);
 
-    let mut udp_pool = UdpPool::new();
+    let mut socket_pool = SocketPool::new();
+    let mut first_server_addr = None;
 
     for server in &config.upstream_servers {
-        let server_addr = format!("{}:53", server.host);
-        let socket = UdpSocket::bind("0.0.0.0:0").await?;
-        udp_pool.add(socket, server_addr);
+        for transport_config in &server.transports {
+            let port = transport_config.get_port();
+            let server_addr = format!("{}:{}", server.host, port);
+
+            match transport_config.transport {
+                Transport::Udp => {
+                    let socket = UdpSocket::bind("0.0.0.0:0").await?;
+                    socket_pool.add_udp(socket);
+                    if first_server_addr.is_none() {
+                        first_server_addr = Some(server_addr);
+                    }
+                }
+                Transport::Tcp => {
+                    let socket = TcpSocket::new_v4()?;
+                    socket.set_keepalive(true)?;
+                    socket_pool.add_tcp(socket);
+                    if first_server_addr.is_none() {
+                        first_server_addr = Some(server_addr);
+                    }
+                }
+            }
+        }
     }
 
-    let udp_pool = Arc::new(udp_pool);
+    let socket_pool = Arc::new(socket_pool);
+
+    let server_addr = first_server_addr.unwrap_or_default();
 
     let mut handles = Vec::new();
 
     for listen_config in config.listen {
         let tcp_config = listen_config.clone();
         let udp_config = listen_config.clone();
-        let udp_pool_clone = udp_pool.clone();
+        let socket_pool_clone = socket_pool.clone();
+        let server_addr_clone = server_addr.clone();
 
         handles.push(tokio::spawn(async move {
             start_tcp_server(tcp_config).await;
         }));
 
         handles.push(tokio::spawn(async move {
-            start_udp_server(udp_config, udp_pool_clone).await;
+            start_udp_server(udp_config, socket_pool_clone, server_addr_clone).await;
         }));
     }
 
