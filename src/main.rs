@@ -214,11 +214,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut first_server_addr = None;
 
     for server in &config.upstream_servers {
-        for transport_config in &server.transports {
-            let port = transport_config.get_port();
+        for interface_config in &server.interfaces {
+            let port = interface_config.get_port();
             let server_addr = format!("{}:{}", server.host, port);
 
-            match transport_config.transport {
+            match interface_config.type_ {
                 Transport::Udp => {
                     let socket = UdpSocket::bind("0.0.0.0:0").await?;
                     socket_pool.add_udp(socket);
@@ -235,7 +235,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     }
                 }
                 Transport::Tls => {
-                    let auth_name = transport_config.get_auth_name();
+                    let auth_name = interface_config.get_auth_name();
                     let mut root_store = rustls::RootCertStore::empty();
 
                     for cert in rustls_native_certs::load_native_certs()

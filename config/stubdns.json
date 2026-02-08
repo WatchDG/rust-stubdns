@@ -8,9 +8,9 @@
     "upstreamServers": [
         {
             "host": "194.242.2.2",
-            "transports": [
+            "interfaces": [
                 {
-                    "transport": "TLS",
+                    "type": "TLS",
                     "authName": "dns.mullvad.net"
                 }
             ]

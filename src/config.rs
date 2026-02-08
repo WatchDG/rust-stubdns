@@ -24,17 +24,18 @@ pub enum Transport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TransportConfig {
-    pub transport: Transport,
+pub struct InterfaceConfig {
+    #[serde(rename = "type")]
+    pub type_: Transport,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
     #[serde(rename = "authName", skip_serializing_if = "Option::is_none")]
     pub auth_name: Option<String>,
 }
 
-impl TransportConfig {
+impl InterfaceConfig {
     pub fn get_port(&self) -> u16 {
-        match self.transport {
+        match self.type_ {
             Transport::Udp => self.port.unwrap_or(53),
             Transport::Tcp => self.port.unwrap_or(53),
             Transport::Tls => self.port.unwrap_or(853),
@@ -44,14 +45,15 @@ impl TransportConfig {
     pub fn get_auth_name(&self) -> String {
         self.auth_name
             .clone()
-            .expect("authName is required for TLS transport")
+            .expect("authName is required for TLS interface")
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpstreamServerConfig {
     pub host: String,
-    pub transports: Vec<TransportConfig>,
+    #[serde(rename = "interfaces")]
+    pub interfaces: Vec<InterfaceConfig>,
 }
 
 pub fn load_config() -> Result<Config, Box<dyn std::error::Error + Send + Sync>> {
