@@ -5,12 +5,19 @@ use std::io;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub listen: Vec<ListenConfig>,
+    #[serde(rename = "upstreamServers")]
+    pub upstream_servers: Vec<ServerConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListenConfig {
     pub host: String,
     pub port: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerConfig {
+    pub host: String,
 }
 
 pub fn load_config() -> Result<Config, Box<dyn std::error::Error + Send + Sync>> {
