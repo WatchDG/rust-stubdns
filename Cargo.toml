@@ -17,8 +17,8 @@ dnsio = { git = "https://github.com/WatchDG/rust-dnsio.git", branch = "feature/n
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 futures = "0.3"
-rustls = "0.23"
-tokio-rustls = "0.26"
+rustls = { version = "0.23", default-features = false, features = ["std", "aws_lc_rs", "prefer-post-quantum"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs"] }
 rustls-native-certs = "0.7"
 
 [profile.release]
