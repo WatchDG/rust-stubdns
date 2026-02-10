@@ -1,8 +1,12 @@
+use crate::config::{Config, Transport};
 use rustls::ClientConfig;
+use rustls::pki_types::ServerName;
+use rustls_native_certs;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::Mutex;
-use tokio_rustls::client::TlsStream;
+use tokio_rustls::{TlsConnector, client::TlsStream};
 
 pub struct TcpSocketConfig {
     pub host: String,
@@ -64,6 +68,93 @@ impl ConnectionPool {
             None
         }
     }
+}
+
+pub async fn create_connection_pool(
+    config: &Config,
+) -> Result<(ConnectionPool, Option<String>), Box<dyn std::error::Error + Send + Sync>> {
+    let mut connection_pool = ConnectionPool::new();
+    let mut first_server_addr = None;
+
+    for server in &config.upstream_servers {
+        for interface_config in &server.interfaces {
+            let port = interface_config.get_port();
+            let server_addr = format!("{}:{}", server.host, port);
+
+            match interface_config.type_ {
+                Transport::Udp => {
+                    let socket = UdpSocket::bind("0.0.0.0:0").await?;
+                    connection_pool.add_udp(socket);
+                    if first_server_addr.is_none() {
+                        first_server_addr = Some(server_addr);
+                    }
+                }
+                Transport::Tcp => {
+                    let tcp_config = TcpSocketConfig {
+                        host: server.host.clone(),
+                        port,
+                    };
+                    let addr: SocketAddr = server_addr.parse()?;
+                    println!("TCP: connecting to {} at startup", server_addr);
+                    let stream = TcpStream::connect(addr).await?;
+                    println!("TCP: connection established to {}", server_addr);
+                    let tcp_connection = TcpConnection {
+                        config: Arc::new(tcp_config),
+                        stream: Arc::new(Mutex::new(stream)),
+                    };
+                    connection_pool.add_tcp(tcp_connection);
+                    if first_server_addr.is_none() {
+                        first_server_addr = Some(server_addr);
+                    }
+                }
+                Transport::Tls => {
+                    let auth_name = interface_config.get_auth_name();
+                    let mut root_store = rustls::RootCertStore::empty();
+
+                    for cert in rustls_native_certs::load_native_certs()
+                        .map_err(|e| format!("Failed to load native certificates: {}", e))?
+                    {
+                        root_store
+                            .add(cert)
+                            .map_err(|e| format!("Failed to add certificate: {}", e))?;
+                    }
+
+                    let client_config = ClientConfig::builder()
+                        .with_root_certificates(root_store)
+                        .with_no_client_auth();
+                    let client_config_arc = Arc::new(client_config);
+
+                    println!("TLS: connecting to {} at startup", server_addr);
+                    let addr: SocketAddr = server_addr.parse()?;
+                    let tcp_stream = TcpStream::connect(addr).await?;
+                    println!("TLS: TCP connection established");
+
+                    let server_name = ServerName::try_from(auth_name.clone())
+                        .map_err(|e| format!("Invalid server name: {}", e))?;
+                    let connector = TlsConnector::from(client_config_arc.clone());
+                    let tls_stream = connector.connect(server_name, tcp_stream).await?;
+                    println!("TLS: TLS handshake completed to {}", server_addr);
+
+                    let tls_config = TlsConnectionConfig {
+                        host: server.host.clone(),
+                        port,
+                        client_config: client_config_arc,
+                        auth_name,
+                    };
+                    let tls_connection = TlsConnection {
+                        config: Arc::new(tls_config),
+                        stream: Arc::new(Mutex::new(tls_stream)),
+                    };
+                    connection_pool.add_tls(tls_connection);
+                    if first_server_addr.is_none() {
+                        first_server_addr = Some(server_addr);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok((connection_pool, first_server_addr))
 }
 
 impl Clone for Connection {
