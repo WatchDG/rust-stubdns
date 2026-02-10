@@ -2,7 +2,16 @@
     "listen": [
         {
             "host": "0.0.0.0",
-            "port": 8053
+            "interfaces": [
+                {
+                    "type": "UDP",
+                    "port": 8053
+                },
+                {
+                    "type": "TCP",
+                    "port": 8053
+                }
+            ]
         }
     ],
     "upstreamServers": [

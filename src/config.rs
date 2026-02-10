@@ -12,7 +12,7 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListenConfig {
     pub host: String,
-    pub port: u16,
+    pub interfaces: Vec<InterfaceConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

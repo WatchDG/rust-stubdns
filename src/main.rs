@@ -1,7 +1,7 @@
 mod config;
 mod pool;
 
-use config::{ListenConfig, Transport, load_config};
+use config::{Transport, load_config};
 use dnsio::decode_message;
 use futures::future::join_all;
 use pool::{Socket, SocketPool, TlsSocket};
@@ -90,8 +90,8 @@ async fn send_query(
     }
 }
 
-async fn start_tcp_server(listen_config: ListenConfig) {
-    let addr = format!("{}:{}", listen_config.host, listen_config.port);
+async fn start_tcp_server(host: String, port: u16) {
+    let addr = format!("{}:{}", host, port);
     let listener = match TcpListener::bind(&addr).await {
         Ok(l) => l,
         Err(e) => {
@@ -134,11 +134,12 @@ async fn start_tcp_server(listen_config: ListenConfig) {
 }
 
 async fn start_udp_server(
-    listen_config: ListenConfig,
+    host: String,
+    port: u16,
     socket_pool: Arc<SocketPool>,
     server_addr: String,
 ) {
-    let addr = format!("{}:{}", listen_config.host, listen_config.port);
+    let addr = format!("{}:{}", host, port);
     let socket = match UdpSocket::bind(&addr).await {
         Ok(s) => s,
         Err(e) => {
@@ -269,18 +270,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut handles = Vec::new();
 
     for listen_config in config.listen {
-        let tcp_config = listen_config.clone();
-        let udp_config = listen_config.clone();
-        let socket_pool_clone = socket_pool.clone();
-        let server_addr_clone = server_addr.clone();
+        let host = listen_config.host.clone();
 
-        handles.push(tokio::spawn(async move {
-            start_tcp_server(tcp_config).await;
-        }));
+        for interface in listen_config.interfaces {
+            let port = interface.get_port();
+            let socket_pool_clone = socket_pool.clone();
+            let server_addr_clone = server_addr.clone();
+            let host_clone = host.clone();
 
-        handles.push(tokio::spawn(async move {
-            start_udp_server(udp_config, socket_pool_clone, server_addr_clone).await;
-        }));
+            match interface.type_ {
+                Transport::Udp => {
+                    handles.push(tokio::spawn(async move {
+                        start_udp_server(host_clone, port, socket_pool_clone, server_addr_clone)
+                            .await;
+                    }));
+                }
+                Transport::Tcp => {
+                    let host_tcp = host.clone();
+                    handles.push(tokio::spawn(async move {
+                        start_tcp_server(host_tcp, port).await;
+                    }));
+                }
+                Transport::Tls => {
+                    eprintln!("TLS listen interface is not yet implemented");
+                }
+            }
+        }
     }
 
     join_all(handles).await;
