@@ -1,65 +1,115 @@
 use rustls::ClientConfig;
 use std::sync::Arc;
-use tokio::net::{TcpSocket, UdpSocket};
+use tokio::net::{TcpStream, UdpSocket};
+use tokio::sync::Mutex;
+use tokio_rustls::client::TlsStream;
 
-pub struct TlsSocket {
-    pub config: Arc<ClientConfig>,
+pub struct TcpSocketConfig {
+    pub host: String,
+    pub port: u16,
+}
+
+pub struct TcpConnection {
+    pub config: Arc<TcpSocketConfig>,
+    pub stream: Arc<Mutex<TcpStream>>,
+}
+
+pub struct TlsConnectionConfig {
+    pub host: String,
+    pub port: u16,
+    pub client_config: Arc<ClientConfig>,
     pub auth_name: String,
 }
 
-pub enum Socket {
+pub struct TlsConnection {
+    pub config: Arc<TlsConnectionConfig>,
+    pub stream: Arc<Mutex<TlsStream<TcpStream>>>,
+}
+
+pub enum Connection {
     Udp(Arc<UdpSocket>),
-    Tcp(Arc<TcpSocket>),
-    Tls(Arc<TlsSocket>),
+    Tcp(Arc<TcpConnection>),
+    Tls(Arc<TlsConnection>),
 }
 
-pub struct SocketPool {
-    sockets: Vec<Socket>,
+pub struct ConnectionPool {
+    connections: Vec<Connection>,
 }
 
-impl SocketPool {
+impl ConnectionPool {
     pub fn new() -> Self {
         Self {
-            sockets: Vec::new(),
+            connections: Vec::new(),
         }
     }
 
     pub fn add_udp(&mut self, udp_socket: UdpSocket) {
-        self.sockets.push(Socket::Udp(Arc::new(udp_socket)));
+        self.connections.push(Connection::Udp(Arc::new(udp_socket)));
     }
 
-    pub fn add_tcp(&mut self, tcp_socket: TcpSocket) {
-        self.sockets.push(Socket::Tcp(Arc::new(tcp_socket)));
+    pub fn add_tcp(&mut self, tcp_connection: TcpConnection) {
+        self.connections
+            .push(Connection::Tcp(Arc::new(tcp_connection)));
     }
 
-    pub fn add_tls(&mut self, tls_socket: TlsSocket) {
-        self.sockets.push(Socket::Tls(Arc::new(tls_socket)));
+    pub fn add_tls(&mut self, tls_connection: TlsConnection) {
+        self.connections
+            .push(Connection::Tls(Arc::new(tls_connection)));
     }
 
-    pub fn get_socket(&self, i: usize) -> Option<Socket> {
-        if i < self.sockets.len() {
-            Some(self.sockets[i].clone())
+    pub fn get_socket(&self, i: usize) -> Option<Connection> {
+        if i < self.connections.len() {
+            Some(self.connections[i].clone())
         } else {
             None
         }
     }
 }
 
-impl Clone for Socket {
+impl Clone for Connection {
     fn clone(&self) -> Self {
         match self {
-            Socket::Udp(socket) => Socket::Udp(socket.clone()),
-            Socket::Tcp(socket) => Socket::Tcp(socket.clone()),
-            Socket::Tls(socket) => Socket::Tls(socket.clone()),
+            Connection::Udp(socket) => Connection::Udp(socket.clone()),
+            Connection::Tcp(socket) => Connection::Tcp(socket.clone()),
+            Connection::Tls(socket) => Connection::Tls(socket.clone()),
         }
     }
 }
 
-impl Clone for TlsSocket {
+impl Clone for TcpSocketConfig {
+    fn clone(&self) -> Self {
+        Self {
+            host: self.host.clone(),
+            port: self.port,
+        }
+    }
+}
+
+impl Clone for TcpConnection {
     fn clone(&self) -> Self {
         Self {
             config: self.config.clone(),
+            stream: Arc::clone(&self.stream),
+        }
+    }
+}
+
+impl Clone for TlsConnectionConfig {
+    fn clone(&self) -> Self {
+        Self {
+            host: self.host.clone(),
+            port: self.port,
+            client_config: self.client_config.clone(),
             auth_name: self.auth_name.clone(),
+        }
+    }
+}
+
+impl Clone for TlsConnection {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            stream: Arc::clone(&self.stream),
         }
     }
 }

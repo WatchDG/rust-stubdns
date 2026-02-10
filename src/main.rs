@@ -4,22 +4,24 @@ mod pool;
 use config::{Transport, load_config};
 use dnsio::decode_message;
 use futures::future::join_all;
-use pool::{Socket, SocketPool, TlsSocket};
+use pool::{
+    Connection, ConnectionPool, TcpConnection, TcpSocketConfig, TlsConnection, TlsConnectionConfig,
+};
 use rustls::ClientConfig;
 use rustls::pki_types::ServerName;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpSocket, TcpStream, UdpSocket};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio_rustls::TlsConnector;
 
 async fn send_query(
-    socket: Socket,
+    connection: Connection,
     query_data: &[u8],
     server_addr: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    match socket {
-        Socket::Udp(udp_socket) => {
+    match connection {
+        Connection::Udp(udp_socket) => {
             println!(
                 "Query: sending {} bytes via UDP to {}",
                 query_data.len(),
@@ -32,58 +34,61 @@ async fn send_query(
             println!("Query: received {} bytes response via UDP", response_len);
             Ok(response_buffer[..response_len].to_vec())
         }
-        Socket::Tcp(_tcp_socket) => {
+        Connection::Tcp(tcp_connection) => {
+            let tcp_addr = format!(
+                "{}:{}",
+                tcp_connection.config.host, tcp_connection.config.port
+            );
             println!(
                 "Query: sending {} bytes via TCP to {}",
                 query_data.len(),
-                server_addr
+                tcp_addr
             );
-            let addr: SocketAddr = server_addr.parse()?;
-            let mut stream = TcpStream::connect(addr).await?;
-            println!("Query: TCP connection established");
+            println!("Query: using existing TCP connection");
+
+            let mut stream_guard = tcp_connection.stream.lock().await;
+            let (mut reader, mut writer) = tokio::io::split(&mut *stream_guard);
 
             let mut length_bytes = (query_data.len() as u16).to_be_bytes().to_vec();
             length_bytes.extend_from_slice(query_data);
-            stream.write_all(&length_bytes).await?;
+            writer.write_all(&length_bytes).await?;
             println!("Query: TCP query sent, waiting for response");
 
             let mut length_buffer = [0u8; 2];
-            stream.read_exact(&mut length_buffer).await?;
+            reader.read_exact(&mut length_buffer).await?;
             let response_length = u16::from_be_bytes(length_buffer) as usize;
 
             let mut response_buffer = vec![0u8; response_length];
-            stream.read_exact(&mut response_buffer).await?;
+            reader.read_exact(&mut response_buffer).await?;
             println!("Query: received {} bytes response via TCP", response_length);
             Ok(response_buffer)
         }
-        Socket::Tls(tls_socket) => {
+        Connection::Tls(tls_connection) => {
+            let tls_addr = format!(
+                "{}:{}",
+                tls_connection.config.host, tls_connection.config.port
+            );
             println!(
                 "Query: sending {} bytes via TLS to {}",
                 query_data.len(),
-                server_addr
+                tls_addr
             );
-            let addr: SocketAddr = server_addr.parse()?;
-            let stream = TcpStream::connect(addr).await?;
-            println!("Query: TCP connection established for TLS");
+            println!("Query: using existing TLS connection");
 
-            let auth_name = tls_socket.auth_name.clone();
-            let server_name = ServerName::try_from(auth_name)
-                .map_err(|e| format!("Invalid server name: {}", e))?;
-            let connector = TlsConnector::from(tls_socket.config.clone());
-            let mut tls_stream = connector.connect(server_name, stream).await?;
-            println!("Query: TLS handshake completed");
+            let mut stream_guard = tls_connection.stream.lock().await;
+            let (mut reader, mut writer) = tokio::io::split(&mut *stream_guard);
 
             let mut length_bytes = (query_data.len() as u16).to_be_bytes().to_vec();
             length_bytes.extend_from_slice(query_data);
-            tls_stream.write_all(&length_bytes).await?;
+            writer.write_all(&length_bytes).await?;
             println!("Query: TLS query sent, waiting for response");
 
             let mut length_buffer = [0u8; 2];
-            tls_stream.read_exact(&mut length_buffer).await?;
+            reader.read_exact(&mut length_buffer).await?;
             let response_length = u16::from_be_bytes(length_buffer) as usize;
 
             let mut response_buffer = vec![0u8; response_length];
-            tls_stream.read_exact(&mut response_buffer).await?;
+            reader.read_exact(&mut response_buffer).await?;
             println!("Query: received {} bytes response via TLS", response_length);
             Ok(response_buffer)
         }
@@ -136,7 +141,7 @@ async fn start_tcp_server(host: String, port: u16) {
 async fn start_udp_server(
     host: String,
     port: u16,
-    socket_pool: Arc<SocketPool>,
+    connection_pool: Arc<ConnectionPool>,
     server_addr: String,
 ) {
     let addr = format!("{}:{}", host, port);
@@ -162,11 +167,11 @@ async fn start_udp_server(
                 }
 
                 let query_data = &buffer[..n];
-                let client_socket = socket_pool.get_socket(0).unwrap();
+                let client_connection = connection_pool.get_socket(0).unwrap();
 
                 println!("UDP: forwarding query to DNS server {}", server_addr);
 
-                match send_query(client_socket, query_data, &server_addr).await {
+                match send_query(client_connection, query_data, &server_addr).await {
                     Ok(response_data) => {
                         println!(
                             "UDP: received {} bytes response from {}",
@@ -211,7 +216,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     println!("Config: {:#?}", config);
 
-    let mut socket_pool = SocketPool::new();
+    let mut connection_pool = ConnectionPool::new();
     let mut first_server_addr = None;
 
     for server in &config.upstream_servers {
@@ -222,15 +227,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             match interface_config.type_ {
                 Transport::Udp => {
                     let socket = UdpSocket::bind("0.0.0.0:0").await?;
-                    socket_pool.add_udp(socket);
+                    connection_pool.add_udp(socket);
                     if first_server_addr.is_none() {
                         first_server_addr = Some(server_addr);
                     }
                 }
                 Transport::Tcp => {
-                    let socket = TcpSocket::new_v4()?;
-                    socket.set_keepalive(true)?;
-                    socket_pool.add_tcp(socket);
+                    let tcp_config = TcpSocketConfig {
+                        host: server.host.clone(),
+                        port,
+                    };
+                    let addr: SocketAddr = server_addr.parse()?;
+                    println!("TCP: connecting to {} at startup", server_addr);
+                    let stream = TcpStream::connect(addr).await?;
+                    println!("TCP: connection established to {}", server_addr);
+                    let tcp_connection = TcpConnection {
+                        config: Arc::new(tcp_config),
+                        stream: Arc::new(tokio::sync::Mutex::new(stream)),
+                    };
+                    connection_pool.add_tcp(tcp_connection);
                     if first_server_addr.is_none() {
                         first_server_addr = Some(server_addr);
                     }
@@ -250,11 +265,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let client_config = ClientConfig::builder()
                         .with_root_certificates(root_store)
                         .with_no_client_auth();
-                    let tls_socket = TlsSocket {
-                        config: Arc::new(client_config),
+                    let client_config_arc = Arc::new(client_config);
+
+                    println!("TLS: connecting to {} at startup", server_addr);
+                    let addr: SocketAddr = server_addr.parse()?;
+                    let tcp_stream = TcpStream::connect(addr).await?;
+                    println!("TLS: TCP connection established");
+
+                    let server_name = ServerName::try_from(auth_name.clone())
+                        .map_err(|e| format!("Invalid server name: {}", e))?;
+                    let connector = TlsConnector::from(client_config_arc.clone());
+                    let tls_stream = connector.connect(server_name, tcp_stream).await?;
+                    println!("TLS: TLS handshake completed to {}", server_addr);
+
+                    let tls_config = TlsConnectionConfig {
+                        host: server.host.clone(),
+                        port,
+                        client_config: client_config_arc,
                         auth_name,
                     };
-                    socket_pool.add_tls(tls_socket);
+                    let tls_connection = TlsConnection {
+                        config: Arc::new(tls_config),
+                        stream: Arc::new(tokio::sync::Mutex::new(tls_stream)),
+                    };
+                    connection_pool.add_tls(tls_connection);
                     if first_server_addr.is_none() {
                         first_server_addr = Some(server_addr);
                     }
@@ -263,7 +297,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     }
 
-    let socket_pool = Arc::new(socket_pool);
+    let connection_pool = Arc::new(connection_pool);
 
     let server_addr = first_server_addr.unwrap_or_default();
 
@@ -274,15 +308,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         for interface in listen_config.interfaces {
             let port = interface.get_port();
-            let socket_pool_clone = socket_pool.clone();
+            let connection_pool_clone = connection_pool.clone();
             let server_addr_clone = server_addr.clone();
             let host_clone = host.clone();
 
             match interface.type_ {
                 Transport::Udp => {
                     handles.push(tokio::spawn(async move {
-                        start_udp_server(host_clone, port, socket_pool_clone, server_addr_clone)
-                            .await;
+                        start_udp_server(
+                            host_clone,
+                            port,
+                            connection_pool_clone,
+                            server_addr_clone,
+                        )
+                        .await;
                     }));
                 }
                 Transport::Tcp => {

@@ -11,7 +11,7 @@ categories = ["network-programming"]
 readme = "README.md"
 
 [dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros", "sync"] }
 # dnsio = "0.1.1"
 dnsio = { git = "https://github.com/WatchDG/rust-dnsio.git", branch = "feature/next" }
 serde = { version = "1.0", features = ["derive"] }
