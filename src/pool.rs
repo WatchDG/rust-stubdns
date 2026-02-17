@@ -8,16 +8,19 @@ use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::Mutex;
 use tokio_rustls::{TlsConnector, client::TlsStream};
 
+#[derive(Debug, Clone)]
 pub struct TcpSocketConfig {
     pub host: String,
     pub port: u16,
 }
 
+#[derive(Debug, Clone)]
 pub struct TcpConnection {
     pub config: Arc<TcpSocketConfig>,
     pub stream: Arc<Mutex<TcpStream>>,
 }
 
+#[derive(Debug, Clone)]
 pub struct TlsConnectionConfig {
     pub host: String,
     pub port: u16,
@@ -30,6 +33,7 @@ pub struct TlsConnection {
     pub stream: Arc<Mutex<TlsStream<TcpStream>>>,
 }
 
+#[derive(Clone)]
 pub enum Connection {
     Udp(Arc<UdpSocket>),
     Tcp(Arc<TcpConnection>),
@@ -155,52 +159,4 @@ pub async fn create_connection_pool(
     }
 
     Ok((connection_pool, first_server_addr))
-}
-
-impl Clone for Connection {
-    fn clone(&self) -> Self {
-        match self {
-            Connection::Udp(socket) => Connection::Udp(socket.clone()),
-            Connection::Tcp(socket) => Connection::Tcp(socket.clone()),
-            Connection::Tls(socket) => Connection::Tls(socket.clone()),
-        }
-    }
-}
-
-impl Clone for TcpSocketConfig {
-    fn clone(&self) -> Self {
-        Self {
-            host: self.host.clone(),
-            port: self.port,
-        }
-    }
-}
-
-impl Clone for TcpConnection {
-    fn clone(&self) -> Self {
-        Self {
-            config: self.config.clone(),
-            stream: Arc::clone(&self.stream),
-        }
-    }
-}
-
-impl Clone for TlsConnectionConfig {
-    fn clone(&self) -> Self {
-        Self {
-            host: self.host.clone(),
-            port: self.port,
-            client_config: self.client_config.clone(),
-            auth_name: self.auth_name.clone(),
-        }
-    }
-}
-
-impl Clone for TlsConnection {
-    fn clone(&self) -> Self {
-        Self {
-            config: self.config.clone(),
-            stream: Arc::clone(&self.stream),
-        }
-    }
 }
