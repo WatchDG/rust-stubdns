@@ -5,8 +5,10 @@ use rustls_native_certs;
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::Mutex;
+use tokio::time::timeout;
 use tokio_rustls::{TlsConnector, client::TlsStream};
 
 #[derive(Debug, Clone)]
@@ -147,7 +149,22 @@ pub async fn create_connection_pool(
                     };
                     let addr: SocketAddr = server_addr.parse()?;
                     println!("TCP: connecting to {} at startup", server_addr);
-                    let stream = TcpStream::connect(addr).await?;
+
+                    let server_timeout = server.get_connection_timeout();
+                    let connection_timeout =
+                        interface_config.get_connection_timeout(server_timeout);
+                    let stream = if let Some(timeout_ms) = connection_timeout {
+                        let duration = Duration::from_millis(timeout_ms);
+                        println!("TCP: using connection timeout of {} ms", timeout_ms);
+                        timeout(duration, TcpStream::connect(addr))
+                            .await
+                            .map_err(|_| format!("TCP connection timeout after {} ms", timeout_ms))?
+                            .map_err(|e| format!("TCP connection error: {}", e))?
+                    } else {
+                        println!("TCP: no connection timeout");
+                        TcpStream::connect(addr).await?
+                    };
+
                     println!("TCP: connection established to {}", server_addr);
                     let tcp_connection = TcpConnection {
                         config: Arc::new(tcp_config),
@@ -177,13 +194,38 @@ pub async fn create_connection_pool(
 
                     println!("TLS: connecting to {} at startup", server_addr);
                     let addr: SocketAddr = server_addr.parse()?;
-                    let tcp_stream = TcpStream::connect(addr).await?;
+
+                    let server_timeout = server.get_connection_timeout();
+                    let connection_timeout =
+                        interface_config.get_connection_timeout(server_timeout);
+                    let tcp_stream = if let Some(timeout_ms) = connection_timeout {
+                        let duration = Duration::from_millis(timeout_ms);
+                        println!("TLS: using connection timeout of {} ms", timeout_ms);
+                        timeout(duration, TcpStream::connect(addr))
+                            .await
+                            .map_err(|_| {
+                                format!("TLS TCP connection timeout after {} ms", timeout_ms)
+                            })?
+                            .map_err(|e| format!("TLS TCP connection error: {}", e))?
+                    } else {
+                        println!("TLS: no connection timeout");
+                        TcpStream::connect(addr).await?
+                    };
                     println!("TLS: TCP connection established");
 
                     let server_name = ServerName::try_from(auth_name.clone())
                         .map_err(|e| format!("Invalid server name: {}", e))?;
                     let connector = TlsConnector::from(client_config_arc.clone());
-                    let tls_stream = connector.connect(server_name, tcp_stream).await?;
+
+                    let tls_stream = if let Some(timeout_ms) = connection_timeout {
+                        let duration = Duration::from_millis(timeout_ms);
+                        timeout(duration, connector.connect(server_name, tcp_stream))
+                            .await
+                            .map_err(|_| format!("TLS handshake timeout after {} ms", timeout_ms))?
+                            .map_err(|e| format!("TLS handshake error: {}", e))?
+                    } else {
+                        connector.connect(server_name, tcp_stream).await?
+                    };
                     println!("TLS: TLS handshake completed to {}", server_addr);
 
                     let tls_config = TlsConnectionConfig {

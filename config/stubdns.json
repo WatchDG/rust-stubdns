@@ -20,9 +20,11 @@
             "interfaces": [
                 {
                     "type": "TLS",
-                    "authName": "dns.mullvad.net"
+                    "authName": "dns.mullvad.net",
+                    "connectionTimeout": 10000
                 }
-            ]
+            ],
+            "connectionTimeout": 10000
         }
     ]
 }

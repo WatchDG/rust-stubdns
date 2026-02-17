@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 
+pub const CONNECTION_TIMEOUT: u64 = 10000;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub listen: Vec<ListenConfig>,
@@ -31,6 +33,8 @@ pub struct InterfaceConfig {
     pub port: Option<u16>,
     #[serde(rename = "authName", skip_serializing_if = "Option::is_none")]
     pub auth_name: Option<String>,
+    #[serde(rename = "connectionTimeout", skip_serializing_if = "Option::is_none")]
+    pub connection_timeout: Option<u64>,
 }
 
 impl InterfaceConfig {
@@ -47,6 +51,16 @@ impl InterfaceConfig {
             .clone()
             .expect("authName is required for TLS interface")
     }
+
+    pub fn get_connection_timeout(&self, server_timeout: Option<u64>) -> Option<u64> {
+        if let Some(interface_timeout) = self.connection_timeout {
+            if interface_timeout == 0 {
+                return None;
+            }
+            return Some(interface_timeout);
+        }
+        server_timeout
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +68,18 @@ pub struct UpstreamServerConfig {
     pub host: String,
     #[serde(rename = "interfaces")]
     pub interfaces: Vec<InterfaceConfig>,
+    #[serde(rename = "connectionTimeout", skip_serializing_if = "Option::is_none")]
+    pub connection_timeout: Option<u64>,
+}
+
+impl UpstreamServerConfig {
+    pub fn get_connection_timeout(&self) -> Option<u64> {
+        match self.connection_timeout {
+            Some(0) => None,
+            Some(timeout) => Some(timeout),
+            None => Some(CONNECTION_TIMEOUT),
+        }
+    }
 }
 
 pub fn load_config() -> Result<Config, Box<dyn std::error::Error + Send + Sync>> {
