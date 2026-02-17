@@ -72,6 +72,23 @@ impl ConnectionPool {
             None
         }
     }
+
+    pub fn get_socket_by_type(&self, transport: Transport) -> Option<Connection> {
+        self.connections
+            .iter()
+            .find(|conn| conn.get_transport() == transport)
+            .map(|conn| conn.clone())
+    }
+}
+
+impl Connection {
+    pub fn get_transport(&self) -> Transport {
+        match self {
+            Connection::Udp(_) => Transport::Udp,
+            Connection::Tcp(_) => Transport::Tcp,
+            Connection::Tls(_) => Transport::Tls,
+        }
+    }
 }
 
 pub async fn create_connection_pool(

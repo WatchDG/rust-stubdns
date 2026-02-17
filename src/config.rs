@@ -15,7 +15,7 @@ pub struct ListenConfig {
     pub interfaces: Vec<InterfaceConfig>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Transport {
     Udp,
