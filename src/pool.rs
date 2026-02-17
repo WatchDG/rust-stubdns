@@ -2,6 +2,7 @@ use crate::config::{Config, Transport};
 use rustls::ClientConfig;
 use rustls::pki_types::ServerName;
 use rustls_native_certs;
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpStream, UdpSocket};
@@ -42,12 +43,14 @@ pub enum Connection {
 
 pub struct ConnectionPool {
     connections: Vec<Connection>,
+    borrowed: Arc<Mutex<HashSet<usize>>>,
 }
 
 impl ConnectionPool {
     pub fn new() -> Self {
         Self {
             connections: Vec::new(),
+            borrowed: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -78,6 +81,33 @@ impl ConnectionPool {
             .iter()
             .find(|conn| conn.get_transport() == transport)
             .map(|conn| conn.clone())
+    }
+
+    pub async fn borrow_socket_by_type(&self, transport: Transport) -> Option<(usize, Connection)> {
+        let mut borrowed = self.borrowed.lock().await;
+        for (index, conn) in self.connections.iter().enumerate() {
+            if conn.get_transport() == transport && !borrowed.contains(&index) {
+                borrowed.insert(index);
+                return Some((index, conn.clone()));
+            }
+        }
+        None
+    }
+
+    pub async fn borrow_first_available(&self) -> Option<(usize, Connection)> {
+        let mut borrowed = self.borrowed.lock().await;
+        for (index, conn) in self.connections.iter().enumerate() {
+            if !borrowed.contains(&index) {
+                borrowed.insert(index);
+                return Some((index, conn.clone()));
+            }
+        }
+        None
+    }
+
+    pub async fn return_socket(&self, index: usize) {
+        let mut borrowed = self.borrowed.lock().await;
+        borrowed.remove(&index);
     }
 }
 

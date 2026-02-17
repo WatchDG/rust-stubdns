@@ -161,39 +161,56 @@ async fn start_udp_server(
                 }
 
                 let query_data = &buffer[..n];
-                let client_connection = connection_pool.get_socket(0).unwrap();
 
-                println!("UDP: forwarding query to DNS server {}", server_addr);
-
-                match send_query(client_connection, query_data, &server_addr).await {
-                    Ok(response_data) => {
-                        println!(
-                            "UDP: received {} bytes response from {}",
-                            response_data.len(),
-                            server_addr
-                        );
-                        println!("UDP: response data: {:?}", &response_data);
-
-                        match decode_message(&response_data) {
-                            Ok(response_msg) => {
-                                println!("UDP: response message: {:?}", response_msg);
-                            }
-                            Err(e) => {
-                                eprintln!("UDP: error decoding response: {}", e)
-                            }
-                        }
-
-                        match socket.send_to(&response_data, client_addr).await {
-                            Ok(_) => {
-                                println!("UDP: response sent to client {}", client_addr)
-                            }
-                            Err(e) => {
-                                eprintln!("UDP: error sending response to client: {}", e)
-                            }
-                        }
+                let borrowed_connection = match connection_pool.borrow_first_available().await {
+                    Some((index, conn)) => {
+                        println!("UDP: borrowed connection {} from pool", index);
+                        Some((index, conn))
                     }
-                    Err(e) => {
-                        eprintln!("UDP: error sending/receiving query: {}", e);
+                    None => {
+                        eprintln!("UDP: no available connections in pool");
+                        None
+                    }
+                };
+
+                if let Some((index, client_connection)) = borrowed_connection {
+                    println!("UDP: forwarding query to DNS server {}", server_addr);
+
+                    let result = send_query(client_connection, query_data, &server_addr).await;
+
+                    connection_pool.return_socket(index).await;
+                    println!("UDP: returned connection {} to pool", index);
+
+                    match result {
+                        Ok(response_data) => {
+                            println!(
+                                "UDP: received {} bytes response from {}",
+                                response_data.len(),
+                                server_addr
+                            );
+                            println!("UDP: response data: {:?}", &response_data);
+
+                            match decode_message(&response_data) {
+                                Ok(response_msg) => {
+                                    println!("UDP: response message: {:?}", response_msg);
+                                }
+                                Err(e) => {
+                                    eprintln!("UDP: error decoding response: {}", e)
+                                }
+                            }
+
+                            match socket.send_to(&response_data, client_addr).await {
+                                Ok(_) => {
+                                    println!("UDP: response sent to client {}", client_addr)
+                                }
+                                Err(e) => {
+                                    eprintln!("UDP: error sending response to client: {}", e)
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("UDP: error sending/receiving query: {}", e);
+                        }
                     }
                 }
             }
