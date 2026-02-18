@@ -52,14 +52,12 @@ impl InterfaceConfig {
             .expect("authName is required for TLS interface")
     }
 
-    pub fn get_connection_timeout(&self, server_timeout: Option<u64>) -> Option<u64> {
-        if let Some(interface_timeout) = self.connection_timeout {
-            if interface_timeout == 0 {
-                return None;
-            }
-            return Some(interface_timeout);
+    pub fn get_connection_timeout(&self) -> Option<u64> {
+        match self.connection_timeout {
+            Some(0) => None,
+            Some(timeout) => Some(timeout),
+            None => Some(CONNECTION_TIMEOUT),
         }
-        server_timeout
     }
 }
 
@@ -80,6 +78,19 @@ impl UpstreamServerConfig {
             None => Some(CONNECTION_TIMEOUT),
         }
     }
+}
+
+pub fn prepare_config(mut config: Config) -> Config {
+    for server in &mut config.upstream_servers {
+        let server_timeout = server.get_connection_timeout();
+
+        for interface in &mut server.interfaces {
+            if interface.connection_timeout.is_none() {
+                interface.connection_timeout = server_timeout;
+            }
+        }
+    }
+    config
 }
 
 pub fn load_config() -> Result<Config, Box<dyn std::error::Error + Send + Sync>> {

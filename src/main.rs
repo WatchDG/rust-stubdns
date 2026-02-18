@@ -1,7 +1,7 @@
 mod config;
 mod pool;
 
-use config::{Transport, load_config};
+use config::{Transport, load_config, prepare_config};
 use dnsio::decode_message;
 use futures::future::join_all;
 use pool::{Connection, ConnectionPool, create_connection_pool};
@@ -224,6 +224,7 @@ async fn start_udp_server(
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = load_config()?;
+    let config = prepare_config(config);
 
     println!("Config: {:#?}", config);
 

@@ -150,9 +150,7 @@ pub async fn create_connection_pool(
                     let addr: SocketAddr = server_addr.parse()?;
                     println!("TCP: connecting to {} at startup", server_addr);
 
-                    let server_timeout = server.get_connection_timeout();
-                    let connection_timeout =
-                        interface_config.get_connection_timeout(server_timeout);
+                    let connection_timeout = interface_config.get_connection_timeout();
                     let stream = if let Some(timeout_ms) = connection_timeout {
                         let duration = Duration::from_millis(timeout_ms);
                         println!("TCP: using connection timeout of {} ms", timeout_ms);
@@ -195,9 +193,7 @@ pub async fn create_connection_pool(
                     println!("TLS: connecting to {} at startup", server_addr);
                     let addr: SocketAddr = server_addr.parse()?;
 
-                    let server_timeout = server.get_connection_timeout();
-                    let connection_timeout =
-                        interface_config.get_connection_timeout(server_timeout);
+                    let connection_timeout = interface_config.get_connection_timeout();
                     let tcp_stream = if let Some(timeout_ms) = connection_timeout {
                         let duration = Duration::from_millis(timeout_ms);
                         println!("TLS: using connection timeout of {} ms", timeout_ms);
