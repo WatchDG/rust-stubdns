@@ -12,6 +12,12 @@ use tokio::time::timeout;
 use tokio_rustls::{TlsConnector, client::TlsStream};
 
 #[derive(Debug, Clone)]
+pub struct UdpConnection {
+    pub server_addr: String,
+    pub socket: Arc<UdpSocket>,
+}
+
+#[derive(Debug, Clone)]
 pub struct TcpSocketConfig {
     pub host: String,
     pub port: u16,
@@ -38,7 +44,7 @@ pub struct TlsConnection {
 
 #[derive(Clone)]
 pub enum Connection {
-    Udp(Arc<UdpSocket>),
+    Udp(Arc<UdpConnection>),
     Tcp(Arc<TcpConnection>),
     Tls(Arc<TlsConnection>),
 }
@@ -56,8 +62,9 @@ impl ConnectionPool {
         }
     }
 
-    pub fn add_udp(&mut self, udp_socket: UdpSocket) {
-        self.connections.push(Connection::Udp(Arc::new(udp_socket)));
+    pub fn add_udp(&mut self, udp_connection: UdpConnection) {
+        self.connections
+            .push(Connection::Udp(Arc::new(udp_connection)));
     }
 
     pub fn add_tcp(&mut self, tcp_connection: TcpConnection) {
@@ -137,7 +144,11 @@ pub async fn create_connection_pool(
             match interface_config.type_ {
                 Transport::Udp => {
                     let socket = UdpSocket::bind("0.0.0.0:0").await?;
-                    connection_pool.add_udp(socket);
+                    let udp_connection = UdpConnection {
+                        server_addr: server_addr.clone(),
+                        socket: Arc::new(socket),
+                    };
+                    connection_pool.add_udp(udp_connection);
                     if first_server_addr.is_none() {
                         first_server_addr = Some(server_addr);
                     }

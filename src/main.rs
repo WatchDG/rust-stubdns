@@ -12,19 +12,24 @@ use tokio::net::{TcpListener, UdpSocket};
 async fn send_query(
     connection: Connection,
     query_data: &[u8],
-    server_addr: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     match connection {
-        Connection::Udp(udp_socket) => {
+        Connection::Udp(udp_connection) => {
             println!(
                 "Query: sending {} bytes via UDP to {}",
                 query_data.len(),
-                server_addr
+                udp_connection.server_addr
             );
-            udp_socket.send_to(query_data, server_addr).await?;
+            udp_connection
+                .socket
+                .send_to(query_data, &udp_connection.server_addr)
+                .await?;
             println!("Query: UDP query sent, waiting for response");
             let mut response_buffer = vec![0u8; 4096];
-            let (response_len, _) = udp_socket.recv_from(&mut response_buffer).await?;
+            let (response_len, _) = udp_connection
+                .socket
+                .recv_from(&mut response_buffer)
+                .await?;
             println!("Query: received {} bytes response via UDP", response_len);
             Ok(response_buffer[..response_len].to_vec())
         }
@@ -176,7 +181,7 @@ async fn start_udp_server(
                 if let Some((index, client_connection)) = borrowed_connection {
                     println!("UDP: forwarding query to DNS server {}", server_addr);
 
-                    let result = send_query(client_connection, query_data, &server_addr).await;
+                    let result = send_query(client_connection, query_data).await;
 
                     connection_pool.return_socket(index).await;
                     println!("UDP: returned connection {} to pool", index);
