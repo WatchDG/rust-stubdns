@@ -128,13 +128,24 @@ impl Connection {
             Connection::Tls(_) => Transport::Tls,
         }
     }
+
+    pub fn get_server_addr(&self) -> String {
+        match self {
+            Connection::Udp(udp_conn) => udp_conn.server_addr.clone(),
+            Connection::Tcp(tcp_conn) => {
+                format!("{}:{}", tcp_conn.config.host, tcp_conn.config.port)
+            }
+            Connection::Tls(tls_conn) => {
+                format!("{}:{}", tls_conn.config.host, tls_conn.config.port)
+            }
+        }
+    }
 }
 
 pub async fn create_connection_pool(
     config: &Config,
-) -> Result<(ConnectionPool, Option<String>), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<ConnectionPool, Box<dyn std::error::Error + Send + Sync>> {
     let mut connection_pool = ConnectionPool::new();
-    let mut first_server_addr = None;
 
     for server in &config.upstream_servers {
         for interface_config in &server.interfaces {
@@ -149,9 +160,6 @@ pub async fn create_connection_pool(
                         socket: Arc::new(socket),
                     };
                     connection_pool.add_udp(udp_connection);
-                    if first_server_addr.is_none() {
-                        first_server_addr = Some(server_addr);
-                    }
                 }
                 Transport::Tcp => {
                     let tcp_config = TcpSocketConfig {
@@ -180,9 +188,6 @@ pub async fn create_connection_pool(
                         stream: Arc::new(Mutex::new(stream)),
                     };
                     connection_pool.add_tcp(tcp_connection);
-                    if first_server_addr.is_none() {
-                        first_server_addr = Some(server_addr);
-                    }
                 }
                 Transport::Tls => {
                     let auth_name = interface_config.get_auth_name();
@@ -246,13 +251,10 @@ pub async fn create_connection_pool(
                         stream: Arc::new(Mutex::new(tls_stream)),
                     };
                     connection_pool.add_tls(tls_connection);
-                    if first_server_addr.is_none() {
-                        first_server_addr = Some(server_addr);
-                    }
                 }
             }
         }
     }
 
-    Ok((connection_pool, first_server_addr))
+    Ok(connection_pool)
 }

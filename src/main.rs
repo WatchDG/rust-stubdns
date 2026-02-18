@@ -16,10 +16,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     println!("Config: {:#?}", config);
 
-    let (connection_pool, first_server_addr) = create_connection_pool(&config).await?;
+    let connection_pool = create_connection_pool(&config).await?;
     let connection_pool = Arc::new(connection_pool);
-
-    let server_addr = first_server_addr.unwrap_or_default();
 
     let mut handles = Vec::new();
 
@@ -29,19 +27,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         for interface in listen_config.interfaces {
             let port = interface.get_port();
             let connection_pool_clone = connection_pool.clone();
-            let server_addr_clone = server_addr.clone();
             let host_clone = host.clone();
 
             match interface.type_ {
                 Transport::Udp => {
                     handles.push(tokio::spawn(async move {
-                        start_udp_server(
-                            host_clone,
-                            port,
-                            connection_pool_clone,
-                            server_addr_clone,
-                        )
-                        .await;
+                        start_udp_server(host_clone, port, connection_pool_clone).await;
                     }));
                 }
                 Transport::Tcp => {

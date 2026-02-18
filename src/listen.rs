@@ -48,12 +48,7 @@ pub async fn start_tcp_server(host: String, port: u16) {
     }
 }
 
-pub async fn start_udp_server(
-    host: String,
-    port: u16,
-    connection_pool: Arc<ConnectionPool>,
-    server_addr: String,
-) {
+pub async fn start_udp_server(host: String, port: u16, connection_pool: Arc<ConnectionPool>) {
     let addr = format!("{}:{}", host, port);
     let socket = match UdpSocket::bind(&addr).await {
         Ok(s) => s,
@@ -90,6 +85,7 @@ pub async fn start_udp_server(
                 };
 
                 if let Some((index, client_connection)) = borrowed_connection {
+                    let server_addr = client_connection.get_server_addr();
                     println!("UDP: forwarding query to DNS server {}", server_addr);
 
                     let result = send_query(client_connection, query_data).await;
