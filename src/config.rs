@@ -7,7 +7,7 @@ pub const WRITE_TIMEOUT: u64 = 10000;
 pub const READ_TIMEOUT: u64 = 10000;
 pub const TLS_HANDSHAKE_TIMEOUT: u64 = 10000;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub listen: Vec<ListenConfig>,
     #[serde(rename = "upstreamServers")]

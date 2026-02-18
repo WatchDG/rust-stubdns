@@ -1,5 +1,5 @@
 use crate::config::{Config, Transport};
-use crate::connection::{ConnectionManager, ConnectionPool};
+use crate::connection::{ConnectionPool, ConnectionWatchdog};
 use rustls::ClientConfig;
 use std::sync::Arc;
 use tokio::net::{TcpStream, UdpSocket};
@@ -75,44 +75,12 @@ impl Connection {
 pub async fn create_connection_pool(
     config: &Config,
 ) -> Result<ConnectionPool, Box<dyn std::error::Error + Send + Sync>> {
-    let mut connection_pool = ConnectionPool::new();
+    let connection_pool = ConnectionPool::new();
+    let connection_pool = Arc::new(Mutex::new(connection_pool));
 
-    for server in &config.upstream_servers {
-        for interface_config in &server.interfaces {
-            let port = interface_config.get_port();
-            let server_addr = format!("{}:{}", server.host, port);
+    let watchdog = ConnectionWatchdog::new(config.clone(), connection_pool.clone());
+    watchdog.create_all_connections().await?;
 
-            match interface_config.type_ {
-                Transport::Udp => {
-                    let udp_connection = ConnectionManager::create_udp_connection(
-                        server,
-                        interface_config,
-                        &server_addr,
-                    )
-                    .await?;
-                    connection_pool.add_udp(udp_connection);
-                }
-                Transport::Tcp => {
-                    let tcp_connection = ConnectionManager::create_tcp_connection(
-                        server,
-                        interface_config,
-                        &server_addr,
-                    )
-                    .await?;
-                    connection_pool.add_tcp(tcp_connection);
-                }
-                Transport::Tls => {
-                    let tls_connection = ConnectionManager::create_tls_connection(
-                        server,
-                        interface_config,
-                        &server_addr,
-                    )
-                    .await?;
-                    connection_pool.add_tls(tls_connection);
-                }
-            }
-        }
-    }
-
-    Ok(connection_pool)
+    let pool_guard = connection_pool.lock().await;
+    Ok(pool_guard.clone())
 }

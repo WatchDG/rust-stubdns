@@ -17,6 +17,7 @@ pub struct ConnectionManager;
 
 impl ConnectionManager {
     pub async fn create_udp_connection(
+        &self,
         _server: &UpstreamServerConfig,
         interface_config: &InterfaceConfig,
         server_addr: &str,
@@ -31,6 +32,7 @@ impl ConnectionManager {
     }
 
     pub async fn create_tcp_connection(
+        &self,
         server: &UpstreamServerConfig,
         interface_config: &InterfaceConfig,
         server_addr: &str,
@@ -68,6 +70,7 @@ impl ConnectionManager {
     }
 
     pub async fn create_tls_connection(
+        &self,
         server: &UpstreamServerConfig,
         interface_config: &InterfaceConfig,
         server_addr: &str,
@@ -89,8 +92,9 @@ impl ConnectionManager {
         let client_config_arc = Arc::new(client_config);
 
         println!("TLS: connecting to {} at startup", server_addr);
-        let tcp_connection =
-            Self::create_tcp_connection(server, interface_config, server_addr).await?;
+        let tcp_connection = self
+            .create_tcp_connection(server, interface_config, server_addr)
+            .await?;
         let tcp_stream = {
             let stream_guard = tcp_connection.stream.lock().await;
             let addr: SocketAddr =
