@@ -1,4 +1,4 @@
-use crate::pool::ConnectionPool;
+use crate::connection::ConnectionPool;
 use crate::query::send_query;
 use dnsio::decode_message;
 use std::sync::Arc;

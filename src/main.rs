@@ -1,4 +1,5 @@
 mod config;
+mod connection;
 mod listen;
 mod pool;
 mod query;
