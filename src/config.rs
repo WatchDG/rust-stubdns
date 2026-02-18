@@ -3,6 +3,8 @@ use std::fs;
 use std::io;
 
 pub const CONNECTION_TIMEOUT: u64 = 10000;
+pub const WRITE_TIMEOUT: u64 = 10000;
+pub const READ_TIMEOUT: u64 = 10000;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -35,6 +37,10 @@ pub struct InterfaceConfig {
     pub auth_name: Option<String>,
     #[serde(rename = "connectionTimeout", skip_serializing_if = "Option::is_none")]
     pub connection_timeout: Option<u64>,
+    #[serde(rename = "writeTimeout", skip_serializing_if = "Option::is_none")]
+    pub write_timeout: Option<u64>,
+    #[serde(rename = "readTimeout", skip_serializing_if = "Option::is_none")]
+    pub read_timeout: Option<u64>,
 }
 
 impl InterfaceConfig {
@@ -59,6 +65,22 @@ impl InterfaceConfig {
             None => Some(CONNECTION_TIMEOUT),
         }
     }
+
+    pub fn get_write_timeout(&self) -> Option<u64> {
+        match self.write_timeout {
+            Some(0) => None,
+            Some(timeout) => Some(timeout),
+            None => Some(WRITE_TIMEOUT),
+        }
+    }
+
+    pub fn get_read_timeout(&self) -> Option<u64> {
+        match self.read_timeout {
+            Some(0) => None,
+            Some(timeout) => Some(timeout),
+            None => Some(READ_TIMEOUT),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,6 +90,10 @@ pub struct UpstreamServerConfig {
     pub interfaces: Vec<InterfaceConfig>,
     #[serde(rename = "connectionTimeout", skip_serializing_if = "Option::is_none")]
     pub connection_timeout: Option<u64>,
+    #[serde(rename = "writeTimeout", skip_serializing_if = "Option::is_none")]
+    pub write_timeout: Option<u64>,
+    #[serde(rename = "readTimeout", skip_serializing_if = "Option::is_none")]
+    pub read_timeout: Option<u64>,
 }
 
 impl UpstreamServerConfig {
@@ -78,15 +104,39 @@ impl UpstreamServerConfig {
             None => Some(CONNECTION_TIMEOUT),
         }
     }
+
+    pub fn get_write_timeout(&self) -> Option<u64> {
+        match self.write_timeout {
+            Some(0) => None,
+            Some(timeout) => Some(timeout),
+            None => Some(WRITE_TIMEOUT),
+        }
+    }
+
+    pub fn get_read_timeout(&self) -> Option<u64> {
+        match self.read_timeout {
+            Some(0) => None,
+            Some(timeout) => Some(timeout),
+            None => Some(READ_TIMEOUT),
+        }
+    }
 }
 
 pub fn prepare_config(mut config: Config) -> Config {
     for server in &mut config.upstream_servers {
         let server_timeout = server.get_connection_timeout();
+        let server_write_timeout = server.get_write_timeout();
+        let server_read_timeout = server.get_read_timeout();
 
         for interface in &mut server.interfaces {
             if interface.connection_timeout.is_none() {
                 interface.connection_timeout = server_timeout;
+            }
+            if interface.write_timeout.is_none() {
+                interface.write_timeout = server_write_timeout;
+            }
+            if interface.read_timeout.is_none() {
+                interface.read_timeout = server_read_timeout;
             }
         }
     }

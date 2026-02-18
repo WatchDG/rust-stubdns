@@ -15,12 +15,15 @@ use tokio_rustls::{TlsConnector, client::TlsStream};
 pub struct UdpConnection {
     pub server_addr: String,
     pub socket: Arc<UdpSocket>,
+    pub read_timeout: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
 pub struct TcpSocketConfig {
     pub host: String,
     pub port: u16,
+    pub write_timeout: Option<u64>,
+    pub read_timeout: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +38,8 @@ pub struct TlsConnectionConfig {
     pub port: u16,
     pub client_config: Arc<ClientConfig>,
     pub auth_name: String,
+    pub write_timeout: Option<u64>,
+    pub read_timeout: Option<u64>,
 }
 
 pub struct TlsConnection {
@@ -155,16 +160,22 @@ pub async fn create_connection_pool(
             match interface_config.type_ {
                 Transport::Udp => {
                     let socket = UdpSocket::bind("0.0.0.0:0").await?;
+                    let read_timeout = interface_config.get_read_timeout();
                     let udp_connection = UdpConnection {
                         server_addr: server_addr.clone(),
                         socket: Arc::new(socket),
+                        read_timeout,
                     };
                     connection_pool.add_udp(udp_connection);
                 }
                 Transport::Tcp => {
+                    let write_timeout = interface_config.get_write_timeout();
+                    let read_timeout = interface_config.get_read_timeout();
                     let tcp_config = TcpSocketConfig {
                         host: server.host.clone(),
                         port,
+                        write_timeout,
+                        read_timeout,
                     };
                     let addr: SocketAddr = server_addr.parse()?;
                     println!("TCP: connecting to {} at startup", server_addr);
@@ -240,11 +251,15 @@ pub async fn create_connection_pool(
                     };
                     println!("TLS: TLS handshake completed to {}", server_addr);
 
+                    let write_timeout = interface_config.get_write_timeout();
+                    let read_timeout = interface_config.get_read_timeout();
                     let tls_config = TlsConnectionConfig {
                         host: server.host.clone(),
                         port,
                         client_config: client_config_arc,
                         auth_name,
+                        write_timeout,
+                        read_timeout,
                     };
                     let tls_connection = TlsConnection {
                         config: Arc::new(tls_config),
