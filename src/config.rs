@@ -5,6 +5,7 @@ use std::io;
 pub const CONNECTION_TIMEOUT: u64 = 10000;
 pub const WRITE_TIMEOUT: u64 = 10000;
 pub const READ_TIMEOUT: u64 = 10000;
+pub const TLS_HANDSHAKE_TIMEOUT: u64 = 10000;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -41,6 +42,11 @@ pub struct InterfaceConfig {
     pub write_timeout: Option<u64>,
     #[serde(rename = "readTimeout", skip_serializing_if = "Option::is_none")]
     pub read_timeout: Option<u64>,
+    #[serde(
+        rename = "tlsHandshakeTimeout",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub tls_handshake_timeout: Option<u64>,
 }
 
 impl InterfaceConfig {
@@ -81,6 +87,14 @@ impl InterfaceConfig {
             None => Some(READ_TIMEOUT),
         }
     }
+
+    pub fn get_tls_handshake_timeout(&self) -> Option<u64> {
+        match self.tls_handshake_timeout {
+            Some(0) => None,
+            Some(timeout) => Some(timeout),
+            None => Some(TLS_HANDSHAKE_TIMEOUT),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +108,11 @@ pub struct UpstreamServerConfig {
     pub write_timeout: Option<u64>,
     #[serde(rename = "readTimeout", skip_serializing_if = "Option::is_none")]
     pub read_timeout: Option<u64>,
+    #[serde(
+        rename = "tlsHandshakeTimeout",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub tls_handshake_timeout: Option<u64>,
 }
 
 impl UpstreamServerConfig {
@@ -120,6 +139,14 @@ impl UpstreamServerConfig {
             None => Some(READ_TIMEOUT),
         }
     }
+
+    pub fn get_tls_handshake_timeout(&self) -> Option<u64> {
+        match self.tls_handshake_timeout {
+            Some(0) => None,
+            Some(timeout) => Some(timeout),
+            None => Some(TLS_HANDSHAKE_TIMEOUT),
+        }
+    }
 }
 
 pub fn prepare_config(mut config: Config) -> Config {
@@ -127,6 +154,7 @@ pub fn prepare_config(mut config: Config) -> Config {
         let server_timeout = server.get_connection_timeout();
         let server_write_timeout = server.get_write_timeout();
         let server_read_timeout = server.get_read_timeout();
+        let server_tls_handshake_timeout = server.get_tls_handshake_timeout();
 
         for interface in &mut server.interfaces {
             if interface.connection_timeout.is_none() {
@@ -137,6 +165,9 @@ pub fn prepare_config(mut config: Config) -> Config {
             }
             if interface.read_timeout.is_none() {
                 interface.read_timeout = server_read_timeout;
+            }
+            if interface.tls_handshake_timeout.is_none() {
+                interface.tls_handshake_timeout = server_tls_handshake_timeout;
             }
         }
     }

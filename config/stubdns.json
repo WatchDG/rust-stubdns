@@ -23,12 +23,14 @@
                     "authName": "dns.mullvad.net",
                     "connectionTimeout": 10000,
                     "writeTimeout": 10000,
-                    "readTimeout": 10000
+                    "readTimeout": 10000,
+                    "tlsHandshakeTimeout": 10000
                 }
             ],
             "connectionTimeout": 10000,
             "writeTimeout": 10000,
-            "readTimeout": 10000
+            "readTimeout": 10000,
+            "tlsHandshakeTimeout": 10000
         }
     ]
 }

@@ -40,6 +40,7 @@ pub struct TlsConnectionConfig {
     pub auth_name: String,
     pub write_timeout: Option<u64>,
     pub read_timeout: Option<u64>,
+    pub tls_handshake_timeout: Option<u64>,
 }
 
 pub struct TlsConnection {
@@ -240,7 +241,8 @@ pub async fn create_connection_pool(
                         .map_err(|e| format!("Invalid server name: {}", e))?;
                     let connector = TlsConnector::from(client_config_arc.clone());
 
-                    let tls_stream = if let Some(timeout_ms) = connection_timeout {
+                    let tls_handshake_timeout = interface_config.get_tls_handshake_timeout();
+                    let tls_stream = if let Some(timeout_ms) = tls_handshake_timeout {
                         let duration = Duration::from_millis(timeout_ms);
                         timeout(duration, connector.connect(server_name, tcp_stream))
                             .await
@@ -253,6 +255,7 @@ pub async fn create_connection_pool(
 
                     let write_timeout = interface_config.get_write_timeout();
                     let read_timeout = interface_config.get_read_timeout();
+                    let tls_handshake_timeout = interface_config.get_tls_handshake_timeout();
                     let tls_config = TlsConnectionConfig {
                         host: server.host.clone(),
                         port,
@@ -260,6 +263,7 @@ pub async fn create_connection_pool(
                         auth_name,
                         write_timeout,
                         read_timeout,
+                        tls_handshake_timeout,
                     };
                     let tls_connection = TlsConnection {
                         config: Arc::new(tls_config),
