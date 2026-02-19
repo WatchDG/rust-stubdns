@@ -75,11 +75,9 @@ impl Connection {
 pub async fn create_connection_pool(
     config: &Config,
 ) -> Result<ConnectionPool, Box<dyn std::error::Error + Send + Sync>> {
-    let connection_pool = ConnectionPool::new();
-    let connection_pool = Arc::new(Mutex::new(connection_pool));
-
+    let connection_pool = Arc::new(Mutex::new(ConnectionPool::new()));
     let watchdog = ConnectionWatchdog::new(config.clone(), connection_pool.clone());
-    watchdog.create_all_connections().await?;
+    watchdog.initialize_pool().await?;
 
     let pool_guard = connection_pool.lock().await;
     Ok(pool_guard.clone())

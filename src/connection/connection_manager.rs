@@ -1,6 +1,6 @@
 use crate::config::{InterfaceConfig, UpstreamServerConfig};
 use crate::pool::{
-    TcpConnection, TcpSocketConfig, TlsConnection, TlsConnectionConfig, UdpConnection,
+    Connection, TcpConnection, TcpSocketConfig, TlsConnection, TlsConnectionConfig, UdpConnection,
 };
 use rustls::ClientConfig;
 use rustls::pki_types::ServerName;
@@ -8,6 +8,7 @@ use rustls_native_certs;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::Mutex;
 use tokio::time::timeout;
@@ -149,5 +150,52 @@ impl ConnectionManager {
             config: Arc::new(tls_config),
             stream: Arc::new(Mutex::new(tls_stream)),
         })
+    }
+
+    pub async fn close_udp_connection(
+        &self,
+        connection: &UdpConnection,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // UDP sockets don't have explicit shutdown, dropping is sufficient
+        // But we can log the closure
+        println!("Closing UDP connection to {}", connection.server_addr);
+        Ok(())
+    }
+
+    pub async fn close_tcp_connection(
+        &self,
+        connection: &TcpConnection,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mut stream_guard = connection.stream.lock().await;
+        println!(
+            "Closing TCP connection to {}:{}",
+            connection.config.host, connection.config.port
+        );
+        stream_guard.shutdown().await?;
+        Ok(())
+    }
+
+    pub async fn close_tls_connection(
+        &self,
+        connection: &TlsConnection,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mut stream_guard = connection.stream.lock().await;
+        println!(
+            "Closing TLS connection to {}:{}",
+            connection.config.host, connection.config.port
+        );
+        stream_guard.shutdown().await?;
+        Ok(())
+    }
+
+    pub async fn close_connection(
+        &self,
+        connection: &Connection,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        match connection {
+            Connection::Udp(udp_conn) => self.close_udp_connection(udp_conn).await,
+            Connection::Tcp(tcp_conn) => self.close_tcp_connection(tcp_conn).await,
+            Connection::Tls(tls_conn) => self.close_tls_connection(tls_conn).await,
+        }
     }
 }
