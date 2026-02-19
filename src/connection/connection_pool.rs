@@ -192,4 +192,20 @@ impl ConnectionPool {
         let mut borrowed = self.borrowed.lock().await;
         borrowed.remove(&index);
     }
+
+    pub fn replace_connection(&mut self, index: usize, connection: Connection) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if index >= self.connections.len() {
+            return Err("Index out of bounds".into());
+        }
+        self.connections[index] = connection;
+        Ok(())
+    }
+
+    pub fn get_connection(&self, index: usize) -> Option<Connection> {
+        if index < self.connections.len() {
+            Some(self.connections[index].clone())
+        } else {
+            None
+        }
+    }
 }
