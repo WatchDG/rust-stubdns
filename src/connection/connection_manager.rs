@@ -1,4 +1,4 @@
-use crate::config::{InterfaceConfig, UpstreamServerConfig};
+use crate::config::{InterfaceConfig, Transport, UpstreamServerConfig};
 use crate::pool::{
     Connection, TcpConnection, TcpSocketConfig, TlsConnection, TlsConnectionConfig, UdpConnection,
 };
@@ -17,6 +17,34 @@ use tokio_rustls::TlsConnector;
 pub struct ConnectionManager;
 
 impl ConnectionManager {
+    pub async fn create_connection(
+        &self,
+        server: &UpstreamServerConfig,
+        interface_config: &InterfaceConfig,
+        server_addr: &str,
+    ) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
+        match interface_config.type_ {
+            Transport::Udp => {
+                let udp = self
+                    .create_udp_connection(server, interface_config, server_addr)
+                    .await?;
+                Ok(Connection::Udp(Arc::new(udp)))
+            }
+            Transport::Tcp => {
+                let tcp = self
+                    .create_tcp_connection(server, interface_config, server_addr)
+                    .await?;
+                Ok(Connection::Tcp(Arc::new(tcp)))
+            }
+            Transport::Tls => {
+                let tls = self
+                    .create_tls_connection(server, interface_config, server_addr)
+                    .await?;
+                Ok(Connection::Tls(Arc::new(tls)))
+            }
+        }
+    }
+
     pub async fn create_udp_connection(
         &self,
         _server: &UpstreamServerConfig,

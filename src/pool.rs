@@ -1,5 +1,5 @@
 use crate::config::{Config, Transport};
-use crate::connection::{ConnectionPool, ConnectionWatchdog};
+use crate::connection::ConnectionPool;
 use rustls::ClientConfig;
 use std::sync::Arc;
 use tokio::net::{TcpStream, UdpSocket};
@@ -75,10 +75,7 @@ impl Connection {
 pub async fn create_connection_pool(
     config: &Config,
 ) -> Result<ConnectionPool, Box<dyn std::error::Error + Send + Sync>> {
-    let connection_pool = Arc::new(Mutex::new(ConnectionPool::new()));
-    let watchdog = ConnectionWatchdog::new(config.clone(), connection_pool.clone());
-    watchdog.initialize_pool().await?;
-
-    let pool_guard = connection_pool.lock().await;
-    Ok(pool_guard.clone())
+    let mut connection_pool = ConnectionPool::new();
+    connection_pool.initialize(config).await?;
+    Ok(connection_pool)
 }
