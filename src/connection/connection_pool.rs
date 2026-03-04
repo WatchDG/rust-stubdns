@@ -3,23 +3,29 @@ use crate::connection::Connection;
 use crate::connection::ConnectionManager;
 use futures::future::join_all;
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct ConnectionPool {
     connections: Vec<Connection>,
+    available_connections: Arc<Mutex<HashSet<usize>>>,
     borrowed_connections: Arc<Mutex<HashSet<usize>>>,
     broken_connections: Arc<Mutex<HashSet<usize>>>,
+    broken_sender: mpsc::Sender<usize>,
 }
 
 impl ConnectionPool {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> (Self, mpsc::Receiver<usize>) {
+        let (broken_sender, broken_receiver) = mpsc::channel();
+        let pool = Self {
             connections: Vec::new(),
+            available_connections: Arc::new(Mutex::new(HashSet::new())),
             borrowed_connections: Arc::new(Mutex::new(HashSet::new())),
             broken_connections: Arc::new(Mutex::new(HashSet::new())),
-        }
+            broken_sender,
+        };
+        (pool, broken_receiver)
     }
 
     pub async fn initialize(
@@ -67,23 +73,23 @@ impl ConnectionPool {
     }
 
     fn add_connection(&mut self, connection: Connection) {
+        let index = self.connections.len();
         self.connections.push(connection);
+        self.available_connections
+            .try_lock()
+            .expect("available_connections lock")
+            .insert(index);
     }
 
     pub async fn borrow_first_available(&self) -> Option<(usize, Connection)> {
         let connection_manager = ConnectionManager;
         loop {
             let candidate = {
-                let broken = self.broken_connections.lock().await;
-                let borrowed_connections = self.borrowed_connections.lock().await;
-                let mut result = None;
-                for (index, conn) in self.connections.iter().enumerate() {
-                    if !borrowed_connections.contains(&index) && !broken.contains(&index) {
-                        result = Some((index, conn.clone()));
-                        break;
-                    }
-                }
-                result
+                let mut available = self.available_connections.lock().await;
+                let index = available.iter().next().copied()?;
+                available.remove(&index);
+                let conn = self.connections.get(index)?.clone();
+                Some((index, conn))
             };
             match candidate {
                 Some((index, conn)) => {
@@ -103,10 +109,27 @@ impl ConnectionPool {
     pub async fn return_socket(&self, index: usize) {
         let mut borrowed_connections = self.borrowed_connections.lock().await;
         borrowed_connections.remove(&index);
+        let broken = self.broken_connections.lock().await;
+        if !broken.contains(&index) {
+            drop(broken);
+            let mut available = self.available_connections.lock().await;
+            available.insert(index);
+        }
+    }
+
+    pub fn get_connection(&self, index: usize) -> Option<Connection> {
+        self.connections.get(index).cloned()
     }
 
     pub async fn mark_broken(&self, index: usize) {
+        let mut available = self.available_connections.lock().await;
+        available.remove(&index);
+        drop(available);
+        let mut borrowed_connections = self.borrowed_connections.lock().await;
+        borrowed_connections.remove(&index);
+        drop(borrowed_connections);
         let mut broken = self.broken_connections.lock().await;
         broken.insert(index);
+        let _ = self.broken_sender.send(index);
     }
 }

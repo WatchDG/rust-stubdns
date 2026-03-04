@@ -5,6 +5,7 @@ mod query;
 mod utils;
 
 use config::{Transport, load_config, prepare_config};
+use connection::ConnectionWatchdog;
 use futures::future::join_all;
 use listen::{start_tcp_server, start_udp_server};
 use std::sync::Arc;
@@ -17,8 +18,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     println!("Config: {:#?}", config);
 
-    let connection_pool = create_connection_pool(&config).await?;
+    let (connection_pool, broken_receiver) = create_connection_pool(&config).await?;
     let connection_pool = Arc::new(connection_pool);
+    let watchdog = Arc::new(ConnectionWatchdog::new(
+        config.clone(),
+        connection_pool.clone(),
+    ));
+    watchdog.clone().start(broken_receiver);
 
     let mut handles = Vec::new();
 

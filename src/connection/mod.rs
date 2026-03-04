@@ -9,3 +9,4 @@ pub use connection::{
 };
 pub use connection_manager::ConnectionManager;
 pub use connection_pool::ConnectionPool;
+pub use connection_watchdog::ConnectionWatchdog;
