@@ -40,7 +40,7 @@ impl ConnectionPool {
                     let port = interface_clone.get_port();
                     let server_addr = format!("{}:{}", server_clone.host, port);
                     let connection = manager_clone_inner
-                        .create_connection(&server_clone, &interface_clone, &server_addr)
+                        .create_connection(&server_clone, &interface_clone)
                         .await?;
                     println!("Pool: connection established to {}", server_addr);
                     let mut pool = pool_clone.lock().await;

@@ -22,24 +22,23 @@ impl ConnectionManager {
         &self,
         server: &UpstreamServerConfig,
         interface_config: &InterfaceConfig,
-        server_addr: &str,
     ) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
         match interface_config.type_ {
             Transport::Udp => {
                 let udp = self
-                    .create_udp_connection(server, interface_config, server_addr)
+                    .create_udp_connection(server, interface_config)
                     .await?;
                 Ok(Connection::Udp(Arc::new(udp)))
             }
             Transport::Tcp => {
                 let tcp = self
-                    .create_tcp_connection(server, interface_config, server_addr)
+                    .create_tcp_connection(server, interface_config)
                     .await?;
                 Ok(Connection::Tcp(Arc::new(tcp)))
             }
             Transport::Tls => {
                 let tls = self
-                    .create_tls_connection(server, interface_config, server_addr)
+                    .create_tls_connection(server, interface_config)
                     .await?;
                 Ok(Connection::Tls(Arc::new(tls)))
             }
@@ -50,14 +49,15 @@ impl ConnectionManager {
         &self,
         server: &UpstreamServerConfig,
         interface_config: &InterfaceConfig,
-        server_addr: &str,
     ) -> Result<UdpConnection, Box<dyn std::error::Error + Send + Sync>> {
         let socket = UdpSocket::bind("0.0.0.0:0").await?;
         let port = interface_config.get_port();
         let read_timeout = interface_config.get_read_timeout();
+        let server_addr = format!("{}:{}", server.host, port);
         let config = UdpConfig {
             host: server.host.clone(),
             port,
+            server_addr,
             read_timeout,
         };
         Ok(UdpConnection {
@@ -70,14 +70,15 @@ impl ConnectionManager {
         &self,
         server: &UpstreamServerConfig,
         interface_config: &InterfaceConfig,
-        server_addr: &str,
     ) -> Result<TcpConnection, Box<dyn std::error::Error + Send + Sync>> {
         let port = interface_config.get_port();
+        let server_addr = format!("{}:{}", server.host, port);
         let write_timeout = interface_config.get_write_timeout();
         let read_timeout = interface_config.get_read_timeout();
         let tcp_config = TcpSocketConfig {
             host: server.host.clone(),
             port,
+            server_addr: server_addr.clone(),
             write_timeout,
             read_timeout,
         };
@@ -108,8 +109,9 @@ impl ConnectionManager {
         &self,
         server: &UpstreamServerConfig,
         interface_config: &InterfaceConfig,
-        server_addr: &str,
     ) -> Result<TlsConnection, Box<dyn std::error::Error + Send + Sync>> {
+        let port = interface_config.get_port();
+        let server_addr = format!("{}:{}", server.host, port);
         let auth_name = interface_config.get_auth_name();
         let mut root_store = rustls::RootCertStore::empty();
 
@@ -128,12 +130,11 @@ impl ConnectionManager {
 
         println!("TLS: connecting to {} at startup", server_addr);
         let tcp_connection = self
-            .create_tcp_connection(server, interface_config, server_addr)
+            .create_tcp_connection(server, interface_config)
             .await?;
         let tcp_stream = {
             let stream_guard = tcp_connection.stream.lock().await;
-            let addr: SocketAddr =
-                format!("{}:{}", server.host, interface_config.get_port()).parse()?;
+            let addr: SocketAddr = server_addr.parse()?;
             let connection_timeout = interface_config.get_connection_timeout();
             drop(stream_guard);
             drop(tcp_connection);
@@ -167,17 +168,18 @@ impl ConnectionManager {
         };
         println!("TLS: TLS handshake completed to {}", server_addr);
 
-        let port = interface_config.get_port();
-        let write_timeout = interface_config.get_write_timeout();
-        let read_timeout = interface_config.get_read_timeout();
-        let tls_handshake_timeout = interface_config.get_tls_handshake_timeout();
-        let tls_config = TlsConnectionConfig {
+        let tcp_config = TcpSocketConfig {
             host: server.host.clone(),
             port,
+            server_addr: server_addr.clone(),
+            write_timeout: interface_config.get_write_timeout(),
+            read_timeout: interface_config.get_read_timeout(),
+        };
+        let tls_handshake_timeout = interface_config.get_tls_handshake_timeout();
+        let tls_config = TlsConnectionConfig {
+            tcp_config: Arc::new(tcp_config),
             client_config: client_config_arc,
             auth_name,
-            write_timeout,
-            read_timeout,
             tls_handshake_timeout,
         };
         Ok(TlsConnection {
@@ -193,8 +195,8 @@ impl ConnectionManager {
         // UDP sockets don't have explicit shutdown, dropping is sufficient
         // But we can log the closure
         println!(
-            "Closing UDP connection to {}:{}",
-            connection.config.host, connection.config.port
+            "Closing UDP connection to {}",
+            connection.config.server_addr
         );
         Ok(())
     }
@@ -218,8 +220,8 @@ impl ConnectionManager {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut stream_guard = connection.stream.lock().await;
         println!(
-            "Closing TLS connection to {}:{}",
-            connection.config.host, connection.config.port
+            "Closing TLS connection to {}",
+            connection.config.tcp_config.server_addr
         );
         stream_guard.shutdown().await?;
         Ok(())

@@ -8,6 +8,7 @@ use tokio_rustls::client::TlsStream;
 pub struct UdpConfig {
     pub host: String,
     pub port: u16,
+    pub server_addr: String,
     pub read_timeout: Option<u64>,
 }
 
@@ -21,6 +22,7 @@ pub struct UdpConnection {
 pub struct TcpSocketConfig {
     pub host: String,
     pub port: u16,
+    pub server_addr: String,
     pub write_timeout: Option<u64>,
     pub read_timeout: Option<u64>,
 }
@@ -33,12 +35,9 @@ pub struct TcpConnection {
 
 #[derive(Debug, Clone)]
 pub struct TlsConnectionConfig {
-    pub host: String,
-    pub port: u16,
+    pub tcp_config: Arc<TcpSocketConfig>,
     pub client_config: Arc<ClientConfig>,
     pub auth_name: String,
-    pub write_timeout: Option<u64>,
-    pub read_timeout: Option<u64>,
     pub tls_handshake_timeout: Option<u64>,
 }
 
@@ -57,15 +56,9 @@ pub enum Connection {
 impl Connection {
     pub fn get_server_addr(&self) -> String {
         match self {
-            Connection::Udp(udp_conn) => {
-                format!("{}:{}", udp_conn.config.host, udp_conn.config.port)
-            }
-            Connection::Tcp(tcp_conn) => {
-                format!("{}:{}", tcp_conn.config.host, tcp_conn.config.port)
-            }
-            Connection::Tls(tls_conn) => {
-                format!("{}:{}", tls_conn.config.host, tls_conn.config.port)
-            }
+            Connection::Udp(udp_conn) => udp_conn.config.server_addr.clone(),
+            Connection::Tcp(tcp_conn) => tcp_conn.config.server_addr.clone(),
+            Connection::Tls(tls_conn) => tls_conn.config.tcp_config.server_addr.clone(),
         }
     }
 }

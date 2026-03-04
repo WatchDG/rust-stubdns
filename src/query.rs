@@ -9,7 +9,7 @@ pub async fn send_query(
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     match connection {
         Connection::Udp(udp_connection) => {
-            let server_addr = format!("{}:{}", udp_connection.config.host, udp_connection.config.port);
+            let server_addr = &udp_connection.config.server_addr;
             println!(
                 "Query: sending {} bytes via UDP to {}",
                 query_data.len(),
@@ -94,10 +94,7 @@ pub async fn send_query(
             Ok(response_buffer)
         }
         Connection::Tls(tls_connection) => {
-            let tls_addr = format!(
-                "{}:{}",
-                tls_connection.config.host, tls_connection.config.port
-            );
+            let tls_addr = &tls_connection.config.tcp_config.server_addr;
             println!(
                 "Query: sending {} bytes via TLS to {}",
                 query_data.len(),
@@ -111,7 +108,7 @@ pub async fn send_query(
             let mut length_bytes = (query_data.len() as u16).to_be_bytes().to_vec();
             length_bytes.extend_from_slice(query_data);
 
-            if let Some(timeout_ms) = tls_connection.config.write_timeout {
+            if let Some(timeout_ms) = tls_connection.config.tcp_config.write_timeout {
                 let duration = Duration::from_millis(timeout_ms);
                 timeout(duration, writer.write_all(&length_bytes))
                     .await
@@ -123,7 +120,7 @@ pub async fn send_query(
             println!("Query: TLS query sent, waiting for response");
 
             let mut length_buffer = [0u8; 2];
-            if let Some(timeout_ms) = tls_connection.config.read_timeout {
+            if let Some(timeout_ms) = tls_connection.config.tcp_config.read_timeout {
                 let duration = Duration::from_millis(timeout_ms);
                 timeout(duration, reader.read_exact(&mut length_buffer))
                     .await
@@ -135,7 +132,7 @@ pub async fn send_query(
             let response_length = u16::from_be_bytes(length_buffer) as usize;
 
             let mut response_buffer = vec![0u8; response_length];
-            if let Some(timeout_ms) = tls_connection.config.read_timeout {
+            if let Some(timeout_ms) = tls_connection.config.tcp_config.read_timeout {
                 let duration = Duration::from_millis(timeout_ms);
                 timeout(duration, reader.read_exact(&mut response_buffer))
                     .await
