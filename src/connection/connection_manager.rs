@@ -9,7 +9,7 @@ use rustls_native_certs;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, Interest};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::Mutex;
 use tokio::time::timeout;
@@ -25,21 +25,15 @@ impl ConnectionManager {
     ) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
         match interface_config.type_ {
             Transport::Udp => {
-                let udp = self
-                    .create_udp_connection(server, interface_config)
-                    .await?;
+                let udp = self.create_udp_connection(server, interface_config).await?;
                 Ok(Connection::Udp(Arc::new(udp)))
             }
             Transport::Tcp => {
-                let tcp = self
-                    .create_tcp_connection(server, interface_config)
-                    .await?;
+                let tcp = self.create_tcp_connection(server, interface_config).await?;
                 Ok(Connection::Tcp(Arc::new(tcp)))
             }
             Transport::Tls => {
-                let tls = self
-                    .create_tls_connection(server, interface_config)
-                    .await?;
+                let tls = self.create_tls_connection(server, interface_config).await?;
                 Ok(Connection::Tls(Arc::new(tls)))
             }
         }
@@ -129,9 +123,7 @@ impl ConnectionManager {
         let client_config_arc = Arc::new(client_config);
 
         println!("TLS: connecting to {} at startup", server_addr);
-        let tcp_connection = self
-            .create_tcp_connection(server, interface_config)
-            .await?;
+        let tcp_connection = self.create_tcp_connection(server, interface_config).await?;
         let tcp_stream = {
             let stream_guard = tcp_connection.stream.lock().await;
             let addr: SocketAddr = server_addr.parse()?;
@@ -186,6 +178,53 @@ impl ConnectionManager {
             config: Arc::new(tls_config),
             stream: Arc::new(Mutex::new(tls_stream)),
         })
+    }
+
+    pub async fn check_connection(&self, connection: &Connection) -> bool {
+        match connection {
+            Connection::Udp(udp_conn) => self.check_udp_connection(udp_conn).await,
+            Connection::Tcp(tcp_conn) => self.check_tcp_connection(tcp_conn).await,
+            Connection::Tls(tls_conn) => self.check_tls_connection(tls_conn).await,
+        }
+    }
+
+    pub async fn check_udp_connection(&self, connection: &UdpConnection) -> bool {
+        connection.socket.local_addr().is_ok()
+    }
+
+    pub async fn check_tcp_connection(&self, connection: &TcpConnection) -> bool {
+        let stream_guard = connection.stream.lock().await;
+        if stream_guard.peer_addr().is_err() {
+            return false;
+        }
+        let ready = match timeout(
+            Duration::from_secs(2),
+            stream_guard.ready(Interest::READABLE | Interest::WRITABLE),
+        )
+        .await
+        {
+            Ok(Ok(ready)) => ready,
+            _ => return false,
+        };
+        !ready.is_read_closed() && !ready.is_write_closed()
+    }
+
+    pub async fn check_tls_connection(&self, connection: &TlsConnection) -> bool {
+        let stream_guard = connection.stream.lock().await;
+        let (tcp_stream, _) = stream_guard.get_ref();
+        if tcp_stream.peer_addr().is_err() {
+            return false;
+        }
+        let ready = match timeout(
+            Duration::from_secs(2),
+            tcp_stream.ready(Interest::READABLE | Interest::WRITABLE),
+        )
+        .await
+        {
+            Ok(Ok(ready)) => ready,
+            _ => return false,
+        };
+        !ready.is_read_closed() && !ready.is_write_closed()
     }
 
     pub async fn close_udp_connection(
