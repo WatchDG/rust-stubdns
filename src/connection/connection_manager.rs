@@ -1,5 +1,5 @@
 use crate::config::{InterfaceConfig, Transport, UpstreamServerConfig};
-use crate::pool::{
+use crate::connection::{
     Connection, TcpConnection, TcpSocketConfig, TlsConnection, TlsConnectionConfig, UdpConnection,
 };
 use rustls::ClientConfig;

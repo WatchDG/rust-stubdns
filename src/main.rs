@@ -1,13 +1,13 @@
 mod config;
 mod connection;
 mod listen;
-mod pool;
+mod utils;
 mod query;
 
 use config::{Transport, load_config, prepare_config};
 use futures::future::join_all;
 use listen::{start_tcp_server, start_udp_server};
-use pool::create_connection_pool;
+use utils::create_connection_pool;
 use std::sync::Arc;
 
 #[tokio::main]

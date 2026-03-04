@@ -1,5 +1,3 @@
-use crate::config::{Config, Transport};
-use crate::connection::ConnectionPool;
 use rustls::ClientConfig;
 use std::sync::Arc;
 use tokio::net::{TcpStream, UdpSocket};
@@ -51,14 +49,6 @@ pub enum Connection {
 }
 
 impl Connection {
-    pub fn get_transport(&self) -> Transport {
-        match self {
-            Connection::Udp(_) => Transport::Udp,
-            Connection::Tcp(_) => Transport::Tcp,
-            Connection::Tls(_) => Transport::Tls,
-        }
-    }
-
     pub fn get_server_addr(&self) -> String {
         match self {
             Connection::Udp(udp_conn) => udp_conn.server_addr.clone(),
@@ -70,12 +60,4 @@ impl Connection {
             }
         }
     }
-}
-
-pub async fn create_connection_pool(
-    config: &Config,
-) -> Result<ConnectionPool, Box<dyn std::error::Error + Send + Sync>> {
-    let mut connection_pool = ConnectionPool::new();
-    connection_pool.initialize(config).await?;
-    Ok(connection_pool)
 }

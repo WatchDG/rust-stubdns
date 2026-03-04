@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::connection::ConnectionManager;
-use crate::pool::Connection;
+use crate::connection::Connection;
 use futures::future::join_all;
 use std::collections::HashSet;
 use std::sync::Arc;

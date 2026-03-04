@@ -1,4 +1,4 @@
-use crate::pool::Connection;
+use crate::connection::Connection;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::timeout;
