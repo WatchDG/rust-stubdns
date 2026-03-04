@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct ConnectionPool {
-    connections: Vec<Connection>,
+    connections: Arc<Mutex<Vec<Connection>>>,
     available_connections: Arc<Mutex<HashSet<usize>>>,
     borrowed_connections: Arc<Mutex<HashSet<usize>>>,
     broken_connections: Arc<Mutex<HashSet<usize>>>,
@@ -19,7 +19,7 @@ impl ConnectionPool {
     pub fn new() -> (Self, mpsc::Receiver<usize>) {
         let (broken_sender, broken_receiver) = mpsc::channel();
         let pool = Self {
-            connections: Vec::new(),
+            connections: Arc::new(Mutex::new(Vec::new())),
             available_connections: Arc::new(Mutex::new(HashSet::new())),
             borrowed_connections: Arc::new(Mutex::new(HashSet::new())),
             broken_connections: Arc::new(Mutex::new(HashSet::new())),
@@ -73,8 +73,10 @@ impl ConnectionPool {
     }
 
     fn add_connection(&mut self, connection: Connection) {
-        let index = self.connections.len();
-        self.connections.push(connection);
+        let mut connections = self.connections.try_lock().expect("connections lock");
+        let index = connections.len();
+        connections.push(connection);
+        drop(connections);
         self.available_connections
             .try_lock()
             .expect("available_connections lock")
@@ -88,7 +90,9 @@ impl ConnectionPool {
                 let mut available = self.available_connections.lock().await;
                 let index = available.iter().next().copied()?;
                 available.remove(&index);
-                let conn = self.connections.get(index)?.clone();
+                drop(available);
+                let connections = self.connections.lock().await;
+                let conn = connections.get(index)?.clone();
                 Some((index, conn))
             };
             match candidate {
@@ -117,8 +121,25 @@ impl ConnectionPool {
         }
     }
 
-    pub fn get_connection(&self, index: usize) -> Option<Connection> {
-        self.connections.get(index).cloned()
+    pub async fn get_connection(&self, index: usize) -> Option<Connection> {
+        let connections = self.connections.lock().await;
+        connections.get(index).cloned()
+    }
+
+    pub async fn add_connection_at(&self, index: usize, connection: Connection) {
+        let mut connections = self.connections.lock().await;
+        if index >= connections.len() {
+            return;
+        }
+        connections[index] = connection;
+        drop(connections);
+
+        let mut available = self.available_connections.lock().await;
+        let mut borrowed = self.borrowed_connections.lock().await;
+        let mut broken = self.broken_connections.lock().await;
+        broken.remove(&index);
+        borrowed.remove(&index);
+        available.insert(index);
     }
 
     pub async fn mark_broken(&self, index: usize) {
