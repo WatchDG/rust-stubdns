@@ -5,10 +5,16 @@ use tokio::sync::Mutex;
 use tokio_rustls::client::TlsStream;
 
 #[derive(Debug, Clone)]
-pub struct UdpConnection {
-    pub server_addr: String,
-    pub socket: Arc<UdpSocket>,
+pub struct UdpConfig {
+    pub host: String,
+    pub port: u16,
     pub read_timeout: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UdpConnection {
+    pub config: Arc<UdpConfig>,
+    pub socket: Arc<UdpSocket>,
 }
 
 #[derive(Debug, Clone)]
@@ -51,7 +57,9 @@ pub enum Connection {
 impl Connection {
     pub fn get_server_addr(&self) -> String {
         match self {
-            Connection::Udp(udp_conn) => udp_conn.server_addr.clone(),
+            Connection::Udp(udp_conn) => {
+                format!("{}:{}", udp_conn.config.host, udp_conn.config.port)
+            }
             Connection::Tcp(tcp_conn) => {
                 format!("{}:{}", tcp_conn.config.host, tcp_conn.config.port)
             }

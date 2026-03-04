@@ -9,18 +9,19 @@ pub async fn send_query(
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     match connection {
         Connection::Udp(udp_connection) => {
+            let server_addr = format!("{}:{}", udp_connection.config.host, udp_connection.config.port);
             println!(
                 "Query: sending {} bytes via UDP to {}",
                 query_data.len(),
-                udp_connection.server_addr
+                server_addr
             );
             udp_connection
                 .socket
-                .send_to(query_data, &udp_connection.server_addr)
+                .send_to(query_data, &server_addr)
                 .await?;
             println!("Query: UDP query sent, waiting for response");
             let mut response_buffer = vec![0u8; 4096];
-            let (response_len, _) = if let Some(timeout_ms) = udp_connection.read_timeout {
+            let (response_len, _) = if let Some(timeout_ms) = udp_connection.config.read_timeout {
                 let duration = Duration::from_millis(timeout_ms);
                 timeout(
                     duration,

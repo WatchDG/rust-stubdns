@@ -1,6 +1,7 @@
 use crate::config::{InterfaceConfig, Transport, UpstreamServerConfig};
 use crate::connection::{
-    Connection, TcpConnection, TcpSocketConfig, TlsConnection, TlsConnectionConfig, UdpConnection,
+    Connection, TcpConnection, TcpSocketConfig, TlsConnection, TlsConnectionConfig, UdpConfig,
+    UdpConnection,
 };
 use rustls::ClientConfig;
 use rustls::pki_types::ServerName;
@@ -47,16 +48,21 @@ impl ConnectionManager {
 
     pub async fn create_udp_connection(
         &self,
-        _server: &UpstreamServerConfig,
+        server: &UpstreamServerConfig,
         interface_config: &InterfaceConfig,
         server_addr: &str,
     ) -> Result<UdpConnection, Box<dyn std::error::Error + Send + Sync>> {
         let socket = UdpSocket::bind("0.0.0.0:0").await?;
+        let port = interface_config.get_port();
         let read_timeout = interface_config.get_read_timeout();
-        Ok(UdpConnection {
-            server_addr: server_addr.to_string(),
-            socket: Arc::new(socket),
+        let config = UdpConfig {
+            host: server.host.clone(),
+            port,
             read_timeout,
+        };
+        Ok(UdpConnection {
+            config: Arc::new(config),
+            socket: Arc::new(socket),
         })
     }
 
@@ -186,7 +192,10 @@ impl ConnectionManager {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // UDP sockets don't have explicit shutdown, dropping is sufficient
         // But we can log the closure
-        println!("Closing UDP connection to {}", connection.server_addr);
+        println!(
+            "Closing UDP connection to {}:{}",
+            connection.config.host, connection.config.port
+        );
         Ok(())
     }
 
