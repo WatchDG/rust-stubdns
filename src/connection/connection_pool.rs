@@ -3,21 +3,21 @@ use crate::connection::Connection;
 use crate::connection::ConnectionManager;
 use futures::future::join_all;
 use std::collections::HashSet;
-use std::sync::{Arc, mpsc};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct ConnectionPool {
-    connections: Arc<Mutex<Vec<Connection>>>,
+    pub(crate) connections: Arc<Mutex<Vec<Connection>>>,
     available_connections: Arc<Mutex<HashSet<usize>>>,
     borrowed_connections: Arc<Mutex<HashSet<usize>>>,
     broken_connections: Arc<Mutex<HashSet<usize>>>,
-    broken_sender: mpsc::Sender<usize>,
+    broken_sender: tokio::sync::mpsc::Sender<usize>,
 }
 
 impl ConnectionPool {
-    pub fn new() -> (Self, mpsc::Receiver<usize>) {
-        let (broken_sender, broken_receiver) = mpsc::channel();
+    pub fn new() -> (Self, tokio::sync::mpsc::Receiver<usize>) {
+        let (broken_sender, broken_receiver) = tokio::sync::mpsc::channel(100);
         let pool = Self {
             connections: Arc::new(Mutex::new(Vec::new())),
             available_connections: Arc::new(Mutex::new(HashSet::new())),
@@ -151,6 +151,6 @@ impl ConnectionPool {
         drop(borrowed_connections);
         let mut broken = self.broken_connections.lock().await;
         broken.insert(index);
-        let _ = self.broken_sender.send(index);
+        let _ = self.broken_sender.send(index).await;
     }
 }
