@@ -28,16 +28,36 @@ impl ConnectionWatchdog {
                         match broken_index {
                             Some(index) => {
                                 tracing::info!(
-                                    "Watchdog: connection {} marked as broken, reconnecting...",
+                                    "Watchdog: connection {} marked as broken, closing and reconnecting...",
                                     index
                                 );
                                 let self_clone = self.clone();
+                                let self_for_close = self.clone();
                                 tokio::spawn(async move {
                                     if let Some(conn) = self_clone
                                         .connection_pool
                                         .get_connection(index)
                                         .await
                                     {
+                                        let conn_clone = conn.clone();
+                                        tokio::spawn(async move {
+                                            if let Err(e) = self_for_close
+                                                .connection_manager
+                                                .close_connection(&conn_clone)
+                                                .await
+                                            {
+                                                tracing::warn!(
+                                                    "Watchdog: error closing connection {}: {}",
+                                                    index, e
+                                                );
+                                            } else {
+                                                tracing::debug!(
+                                                    "Watchdog: connection {} closed",
+                                                    index
+                                                );
+                                            }
+                                        });
+
                                         if let Some((server, interface)) = conn.to_server_and_interface_config()
                                         {
                                             match self_clone
