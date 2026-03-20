@@ -50,7 +50,7 @@ impl ConnectionPool {
                     let connection = manager_clone_inner
                         .create_connection(&server_clone, &interface_clone)
                         .await?;
-                    println!("Pool: connection established to {}", server_addr);
+                    tracing::info!("Pool: connection established to {}", server_addr);
                     let mut pool = pool_clone.lock().await;
                     pool.add_connection(connection);
                     Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())

@@ -1,4 +1,4 @@
-use crate::config::{InterfaceConfig, Transport, UpstreamServerConfig};
+use crate::config::{InterfaceConfig, Transport, UpstreamServerConfig, CONNECTION_CHECK_TIMEOUT_MS};
 use crate::connection::{
     Connection, TcpConnection, TcpSocketConfig, TlsConnection, TlsConnectionConfig, UdpConfig,
     UdpConnection,
@@ -77,22 +77,22 @@ impl ConnectionManager {
             read_timeout,
         };
         let addr: SocketAddr = server_addr.parse()?;
-        println!("TCP: connecting to {} at startup", server_addr);
+        tracing::info!("TCP: connecting to {} at startup", server_addr);
 
         let connection_timeout = interface_config.get_connection_timeout();
         let stream = if let Some(timeout_ms) = connection_timeout {
             let duration = Duration::from_millis(timeout_ms);
-            println!("TCP: using connection timeout of {} ms", timeout_ms);
+            tracing::debug!("TCP: using connection timeout of {} ms", timeout_ms);
             timeout(duration, TcpStream::connect(addr))
                 .await
                 .map_err(|_| format!("TCP connection timeout after {} ms", timeout_ms))?
                 .map_err(|e| format!("TCP connection error: {}", e))?
         } else {
-            println!("TCP: no connection timeout");
+            tracing::debug!("TCP: no connection timeout");
             TcpStream::connect(addr).await?
         };
 
-        println!("TCP: connection established to {}", server_addr);
+        tracing::info!("TCP: connection established to {}", server_addr);
         Ok(TcpConnection {
             config: Arc::new(tcp_config),
             stream: Arc::new(Mutex::new(stream)),
@@ -122,7 +122,7 @@ impl ConnectionManager {
             .with_no_client_auth();
         let client_config_arc = Arc::new(client_config);
 
-        println!("TLS: connecting to {} at startup", server_addr);
+        tracing::info!("TLS: connecting to {} at startup", server_addr);
         let tcp_connection = self.create_tcp_connection(server, interface_config).await?;
         let tcp_stream = {
             let stream_guard = tcp_connection.stream.lock().await;
@@ -132,17 +132,17 @@ impl ConnectionManager {
             drop(tcp_connection);
             if let Some(timeout_ms) = connection_timeout {
                 let duration = Duration::from_millis(timeout_ms);
-                println!("TLS: using connection timeout of {} ms", timeout_ms);
+                tracing::debug!("TLS: using connection timeout of {} ms", timeout_ms);
                 timeout(duration, TcpStream::connect(addr))
                     .await
                     .map_err(|_| format!("TLS TCP connection timeout after {} ms", timeout_ms))?
                     .map_err(|e| format!("TLS TCP connection error: {}", e))?
             } else {
-                println!("TLS: no connection timeout");
+                tracing::debug!("TLS: no connection timeout");
                 TcpStream::connect(addr).await?
             }
         };
-        println!("TLS: TCP connection established");
+        tracing::info!("TLS: TCP connection established");
 
         let server_name = ServerName::try_from(auth_name.clone())
             .map_err(|e| format!("Invalid server name: {}", e))?;
@@ -158,7 +158,7 @@ impl ConnectionManager {
         } else {
             connector.connect(server_name, tcp_stream).await?
         };
-        println!("TLS: TLS handshake completed to {}", server_addr);
+        tracing::info!("TLS: TLS handshake completed to {}", server_addr);
 
         let tcp_config = TcpSocketConfig {
             host: server.host.clone(),
@@ -198,7 +198,7 @@ impl ConnectionManager {
             return false;
         }
         let ready = match timeout(
-            Duration::from_secs(2),
+            Duration::from_millis(CONNECTION_CHECK_TIMEOUT_MS),
             stream_guard.ready(Interest::READABLE | Interest::WRITABLE),
         )
         .await
@@ -216,7 +216,7 @@ impl ConnectionManager {
             return false;
         }
         let ready = match timeout(
-            Duration::from_secs(2),
+            Duration::from_millis(CONNECTION_CHECK_TIMEOUT_MS),
             tcp_stream.ready(Interest::READABLE | Interest::WRITABLE),
         )
         .await
@@ -233,7 +233,7 @@ impl ConnectionManager {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // UDP sockets don't have explicit shutdown, dropping is sufficient
         // But we can log the closure
-        println!(
+        tracing::debug!(
             "Closing UDP connection to {}",
             connection.config.server_addr
         );
@@ -245,7 +245,7 @@ impl ConnectionManager {
         connection: &TcpConnection,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut stream_guard = connection.stream.lock().await;
-        println!(
+        tracing::debug!(
             "Closing TCP connection to {}:{}",
             connection.config.host, connection.config.port
         );
@@ -258,7 +258,7 @@ impl ConnectionManager {
         connection: &TlsConnection,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut stream_guard = connection.stream.lock().await;
-        println!(
+        tracing::debug!(
             "Closing TLS connection to {}",
             connection.config.tcp_config.server_addr
         );

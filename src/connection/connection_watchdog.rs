@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, HEALTH_CHECK_INTERVAL_MS};
 use crate::connection::{ConnectionManager, ConnectionPool};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -21,13 +21,13 @@ impl ConnectionWatchdog {
 
     pub fn start(self: Arc<Self>, mut broken_receiver: mpsc::Receiver<usize>) {
         tokio::spawn(async move {
-            let mut health_check_interval = interval(Duration::from_secs(30));
+            let mut health_check_interval = interval(Duration::from_millis(HEALTH_CHECK_INTERVAL_MS));
             loop {
                 tokio::select! {
                     broken_index = broken_receiver.recv() => {
                         match broken_index {
                             Some(index) => {
-                                println!(
+                                tracing::info!(
                                     "Watchdog: connection {} marked as broken, reconnecting...",
                                     index
                                 );
@@ -50,14 +50,14 @@ impl ConnectionWatchdog {
                                                         .connection_pool
                                                         .add_connection_at(index, new_conn)
                                                         .await;
-                                                    println!(
+                                                    tracing::info!(
                                                         "Watchdog: reconnected connection {} to {}:{}",
                                                         index,
                                                         server.host,
                                                         interface.get_port()
                                                     );
                                                 }
-                                                Err(e) => eprintln!(
+                                                Err(e) => tracing::error!(
                                                     "Watchdog: failed to reconnect {}: {}",
                                                     index, e
                                                 ),
@@ -67,13 +67,13 @@ impl ConnectionWatchdog {
                                 });
                             }
                             None => {
-                                println!("Watchdog: channel closed, shutting down...");
+                                tracing::info!("Watchdog: channel closed, shutting down...");
                                 break;
                             }
                         }
                     }
                     _ = health_check_interval.tick() => {
-                        println!("Watchdog: running periodic health check...");
+                        tracing::debug!("Watchdog: running periodic health check...");
                         let self_clone = self.clone();
                         tokio::spawn(async move {
                             self_clone.run_health_check().await;
@@ -92,7 +92,7 @@ impl ConnectionWatchdog {
         for index in indices {
             if let Some(conn) = self.connection_pool.get_connection(index).await {
                 if !self.connection_manager.check_connection(&conn).await {
-                    println!("Watchdog: health check found broken connection {}", index);
+                    tracing::debug!("Watchdog: health check found broken connection {}", index);
                     self.connection_pool.mark_broken(index).await;
                 }
             }

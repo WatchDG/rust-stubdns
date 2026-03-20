@@ -6,6 +6,9 @@ pub const CONNECTION_TIMEOUT: u64 = 10000;
 pub const WRITE_TIMEOUT: u64 = 10000;
 pub const READ_TIMEOUT: u64 = 10000;
 pub const TLS_HANDSHAKE_TIMEOUT: u64 = 10000;
+pub const HEALTH_CHECK_INTERVAL_MS: u64 = 30000;
+pub const TCP_BUFFER_SIZE: usize = 1024;
+pub const CONNECTION_CHECK_TIMEOUT_MS: u64 = 2000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
