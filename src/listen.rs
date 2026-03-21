@@ -1,7 +1,7 @@
 use crate::config::TCP_BUFFER_SIZE;
 use crate::connection::ConnectionPool;
 use crate::query::send_query;
-use dnsio::decode_message;
+use dnsio::{decode_message, encode_message};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -72,19 +72,30 @@ async fn handle_tcp_connection(
                 response_data.len(),
                 server_addr
             );
-            tracing::trace!("TCP: response data: {:?}", &response_data);
 
-            if let Ok(response_msg) = decode_message(&response_data) {
-                tracing::debug!("TCP: response message: {:?}", response_msg);
-            }
+            match decode_message(&response_data) {
+                Ok(response_msg) => {
+                    tracing::debug!("TCP: response message: {:?}", response_msg);
 
-            let mut length_bytes = (response_data.len() as u16).to_be_bytes().to_vec();
-            length_bytes.extend_from_slice(&response_data);
+                    match encode_message(&response_msg) {
+                        Ok(encoded_response) => {
+                            let mut length_bytes = (encoded_response.len() as u16).to_be_bytes().to_vec();
+                            length_bytes.extend_from_slice(&encoded_response);
 
-            if let Err(e) = socket.write_all(&length_bytes).await {
-                tracing::error!("TCP: error sending response to client: {}", e);
-            } else {
-                tracing::info!("TCP: response sent to client {}", client_addr);
+                            if let Err(e) = socket.write_all(&length_bytes).await {
+                                tracing::error!("TCP: error sending response to client: {}", e);
+                            } else {
+                                tracing::info!("TCP: response sent to client {}", client_addr);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("TCP: error encoding response message: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("TCP: error decoding response: {}", e);
+                }
             }
         }
         Err(e) => {
@@ -195,23 +206,29 @@ pub async fn start_udp_server(host: String, port: u16, connection_pool: Arc<Conn
                                             response_data.len(),
                                             server_addr
                                         );
-                                        tracing::trace!("UDP: response data: {:?}", &response_data);
 
                                         match decode_message(&response_data) {
                                             Ok(response_msg) => {
                                                 tracing::debug!("UDP: response message: {:?}", response_msg);
+
+                                                match encode_message(&response_msg) {
+                                                    Ok(encoded_response) => {
+                                                        match socket.send_to(&encoded_response, client_addr).await {
+                                                            Ok(_) => {
+                                                                tracing::info!("UDP: response sent to client {}", client_addr)
+                                                            }
+                                                            Err(e) => {
+                                                                tracing::error!("UDP: error sending response to client: {}", e)
+                                                            }
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::error!("UDP: error encoding response message: {}", e);
+                                                    }
+                                                }
                                             }
                                             Err(e) => {
                                                 tracing::error!("UDP: error decoding response: {}", e)
-                                            }
-                                        }
-
-                                        match socket.send_to(&response_data, client_addr).await {
-                                            Ok(_) => {
-                                                tracing::info!("UDP: response sent to client {}", client_addr)
-                                            }
-                                            Err(e) => {
-                                                tracing::error!("UDP: error sending response to client: {}", e)
                                             }
                                         }
                                     }
